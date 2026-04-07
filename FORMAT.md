@@ -58,8 +58,9 @@ readers to skip to the next segment (no segment footer required).
 
 ##### 3.1 Schema Segments
 
-`clem` understands platform-agnostic Rust primitive types such as `u32` or `f64`. Additional user-defined types are
-embedding directly in the schema with nested types being flattened recursively (depth first):
+`clem` understands platform-agnostic Rust primitive types such as `u32` or `f64`. Platform-dependent types such as
+`usize` are deliberatley ommitted to ensure file portability. Additional user-defined types are embedded directly in
+the schema, with nested types being flattened recursively (depth first):
 
 - Leaf nodes map to physical columnar data buffers via index.
 - Internal nodes exist purely for navigation & reconstruction.
