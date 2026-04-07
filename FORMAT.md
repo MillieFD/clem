@@ -200,7 +200,7 @@ where
 
     /// Builds a schema segment for type `R` and writes to disk. Returns the written [`Partition`] is successful, which
     /// is also cached to the lazily initialised `schema: Partition` field.
-    pub fn schema(&self) -> Result<Partition, Error> { ... }
+    pub async fn schema(&self) -> Result<Partition, Error> { ... }
 
     /// Writes a new data segment to disk. Returns the written [`Partition`] if successful.
     ///
@@ -208,7 +208,7 @@ where
     ///
     /// [`Write`] uses the lazily initialised `schema: Partition` field which calls [`Self::schema`] on first access,
     /// hence ensuring that a schema segment is always written to disk before any dependent data segments.
-    pub fn write(&self) -> Result<Partition, Error> { ... }
+    pub async fn write(&self) -> Result<Partition, Error> { ... }
 
     /// Reinitialise the columnar data buffers without writing data to disk. All accumulated data is permanently lost.
     pub fn discard(&self) { ... }
