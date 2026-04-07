@@ -56,6 +56,10 @@ Whole-segment deletion is permitted but expensive; all downstream segments are m
 - Leaf nodes map to contiguous columnar data buffers via index.
 - Internal nodes exist purely for navigation & reconstruction.
 
+```text
+tree schema → array nodes → buffers
+```
+
 For example `struct Outer { one: Inner, two: u8 }` and `struct Inner { one: bool, two: Option<f64> }` can be flattened
 to just three contiguous data buffers and one null bitmap arranged sequentially:
 
