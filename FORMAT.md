@@ -83,6 +83,8 @@ The schema itself can be conceptualised as a `struct` where each column becomes 
 - Memory mapped IO safety
 - Cache-line efficiency
 
+Byte order is little-endian throughout.
+
 ---
 
 ### 3. Segment Types
