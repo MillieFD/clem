@@ -218,7 +218,22 @@ where
 Users can explicitly write data to disk using the `write` function. Data is automatically written to disk on `drop` if
 the buffers are not empty.
 
-##### 5.2 Write Cycle
+##### 5.2 Parallelism & Asynchronicity
+
+Users can spawn an arbitrary number of accumulators via `Dataset::accumulator`.
+
+```rust
+impl Dataset {
+    pub fn accumulator(&self) -> Result<Accumulator, Error> { ... }
+}
+```
+
+Accumulators are `Sized` and `Sync`. Multi-producer workloads can accumulate independent columnar buffers in memory.
+Access to the underlying file is coordinated to prevent two accumulators writing to disk simultaneously.
+
+All interactions with the underlying file and global lock are implemented asynchronously using `smol`.
+
+##### 5.3 Write Cycle
 
 Appending a new segment to the file – regardless of type – requires four steps:
 
