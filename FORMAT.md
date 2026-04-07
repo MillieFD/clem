@@ -47,6 +47,30 @@ The file is divided into **self-describing segments** to enable:
 `clem` is optimised for append-heavy workflows and in situ query reads via `mmap`. Segments are immutable once written.
 Whole-segment deletion is permitted but expensive; all downstream segments are moved and the `manifest` is updated.
 
+##### 2.3 Arbitrary Types
+
+`clem` understands **platform-agnostic** primitive types such as `u32` or `f64`. Platform-dependent types such as
+`usize` are deliberatley ommitted to ensure file portability. Additional user-defined types are flattened recursively
+(depth first) and embedded directly in the schema:
+
+- Leaf nodes map to contiguous columnar data buffers via index.
+- Internal nodes exist purely for navigation & reconstruction.
+
+For example `struct Outer { one: Inner, two: u8 }` and `struct Inner { one: bool, two: Option<f64> }` can be flattened
+to just three contiguous data buffers and one null bitmap arranged sequentially:
+
+```text
+Outer
+├─ one: Inner
+│  ├─ one: column 0
+│  └─ two
+│     ├─ null bitmap
+│     └─ column 1
+└─ two: column 2
+```
+
+The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
+
 ---
 
 ### 3. Segment Types
@@ -58,15 +82,10 @@ readers to skip to the next segment (no segment footer required).
 
 ##### 3.1 Schema Segments
 
-`clem` understands platform-agnostic Rust primitive types such as `u32` or `f64`. Platform-dependent types such as
-`usize` are deliberatley ommitted to ensure file portability. Additional user-defined types are embedded directly in
-the schema, with nested types being flattened recursively (depth first):
-
-- Leaf nodes map to contiguous columnar data buffers via index.
-- Internal nodes exist purely for navigation & reconstruction.
-
-The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
-This approach supports arbitrary serialisation strategies.
+To construct a schema, users must first define a `struct` which implements `serde::Serialize`. Each field becomes a
+column with a `name` and `type`. Each instance of the `struct` represents a row. This design moves schema validity
+checks to compile time by leveraging Rust's type safety, improving data ingestion speed by eliminating costly runtime
+schema checks.
 
 ```text
 Schema Segment
