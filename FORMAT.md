@@ -102,7 +102,7 @@ Data Segment
 The schema maps each leaf node to a contiguous data buffer via the column index. This index is used to look up the
 corresponding column offset from the `offsets: [u64]` buffer. Buffer payload deserialization is informed by the column
 type described by the schema. All columns must have an equal number of rows. Each nullable column is accompanied by a
-packed nullable bits buffer.
+packed nullable bitmap.
 
 TODO: Is it preferable to include nullable bits alognside each column or all together after the segment header?
 TODO: Nullability should be indicated in the `manifest` with `offset` and `length` for the null bitmap is present.
