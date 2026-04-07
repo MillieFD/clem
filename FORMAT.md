@@ -133,13 +133,13 @@ type described by the schema. All columns must have an equal number of rows. Eac
 packed nullable bitmap.
 
 TODO: Is it preferable to include nullable bits alognside each column or all together after the segment header?
-TODO: Nullability should be indicated in the `manifest` with `offset` and `length` for the null bitmap is present.
+TODO: Nullability should be indicated in the `manifest` with `offset` and `length` for the null bitmap if present.
 
-##### 3.3 Map Segments
+##### 3.3 Dictionary Segments
 
 The storage cost for large types with repetitive values can be amortised using a map segment.
 
-TODO: What is the best layout for a map segment? Could reference a schema segment and mark which column is the key?
+TODO: What is the best layout for a dictionary segment? Reference a schema segment and mark which column is the key?
 
 ---
 
@@ -199,7 +199,7 @@ File
 
 ```rust
 /// A contiguous byte range within the file.
-struct Partition {
+struct Sector {
     /// Byte offset to the start of the segment.
     offset: SeekFrom,
     /// Length in bytes.
@@ -226,17 +226,17 @@ where
     /// Extends the accumulator buffers with the contents of an iterator.
     pub fn extend<I>(&self, iterator: I) where I: IntoIterator<Item = R> { ... }
 
-    /// Builds a schema segment for type `R` and writes to disk. Returns the written [`Partition`] is successful, which
-    /// is also cached to the lazily initialised `schema: Partition` field.
-    pub async fn schema(&self) -> Result<Partition, Error> { ... }
+    /// Builds a schema segment for type `R` and writes to disk. Returns the written [`Sector`] is successful, which
+    /// is also cached to the lazily initialised `schema: Sector` field.
+    pub async fn schema(&self) -> Result<Sector, Error> { ... }
 
-    /// Writes a new data segment to disk. Returns the written [`Partition`] if successful.
+    /// Writes a new data segment to disk. Returns the written [`Sector`] if successful.
     ///
     /// The internal columnar buffers are consumed and reinitialised with [`Vec::new`] ready for further data ingestion.
     ///
-    /// [`Write`] uses the lazily initialised `schema: Partition` field which calls [`Self::schema`] on first access,
+    /// [`Write`] uses the lazily initialised `schema: Sector` field which calls [`Self::schema`] on first access,
     /// hence ensuring that a schema segment is always written to disk before any dependent data segments.
-    pub async fn write(&self) -> Result<Partition, Error> { ... }
+    pub async fn write(&self) -> Result<Sector, Error> { ... }
 
     /// Reinitialise the columnar data buffers without writing data to disk. All accumulated data is permanently lost.
     pub fn discard(&self) { ... }
