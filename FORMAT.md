@@ -196,9 +196,7 @@ where
     pub fn push(&self, record: R) { ... }
 
     /// Extends the accumulator buffers with the contents of an iterator.
-    pub fn extend<I>(&self, iterator: I) where
-        I: IntoIterator<Item=R>
-    { ... }
+    pub fn extend<I>(&self, iterator: I) where I: IntoIterator<Item = R> { ... }
 
     /// Builds a schema segment for type `R` and writes to disk. Returns the written [`Partition`] is successful, which
     /// is also cached to the lazily initialised `schema: Partition` field.
