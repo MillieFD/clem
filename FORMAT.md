@@ -44,9 +44,8 @@ The file is divided into **self-describing segments** to enable:
 - Crash resilience
 - Manifest reconstruction
 
-`clem` is optimised for users to append new segments. In situ value lookup and mutation is permitted providing that the
-value's type and size remain unaltered. Within-segment value deletion is not permitted. Whole-segment deletion is
-permitted but expensive; all downstream segments are moved and the `manifest` is updated.
+`clem` is optimised for append-heavy workflows and in situ query reads via `mmap`. Segments are immutable once written.
+Whole-segment deletion is permitted but expensive; all downstream segments are moved and the `manifest` is updated.
 
 ---
 
