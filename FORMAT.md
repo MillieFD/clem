@@ -71,6 +71,14 @@ Outer
 
 The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
 
+##### 2.4 Alignment
+
+`clem` enforces 64-bit alignment to ensure:
+
+- SIMD vectorisation
+- Memory mapped IO safety
+- Cache-line efficiency
+
 ---
 
 ### 3. Segment Types
