@@ -62,7 +62,7 @@ readers to skip to the next segment (no segment footer required).
 `usize` are deliberatley ommitted to ensure file portability. Additional user-defined types are embedded directly in
 the schema, with nested types being flattened recursively (depth first):
 
-- Leaf nodes map to physical columnar data buffers via index.
+- Leaf nodes map to contiguous columnar data buffers via index.
 - Internal nodes exist purely for navigation & reconstruction.
 
 The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
