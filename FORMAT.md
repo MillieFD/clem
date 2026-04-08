@@ -1,6 +1,6 @@
 # `clem` Format Specification
 
-Domain-agnostic data storage for n-dimensional analytical workloads.
+Domain-agnostic high-throughput storage for n-dimensional analytical data, written in Rust.
 
 ---
 
@@ -60,8 +60,8 @@ the schema using a depth-first cursor-based stateful serializer with no per-fiel
 tree schema → array nodes → buffers
 ```
 
-For example `struct Outer { foo: Inner, bar: i32 }` and `struct Inner { baz: bool, quux: Option<f64> }` can be encoded as
-just three contiguous data buffers and one null bitmap arranged sequentially:
+For example `struct Outer { foo: Inner, bar: i32 }` and `struct Inner { baz: bool, quux: Option<f64> }` can be encoded
+as just three contiguous data buffers and one null bitmap arranged sequentially:
 
 ```text
 Outer
@@ -95,6 +95,38 @@ The schema itself can be conceptualised as a `struct` where each column becomes 
 - Cache-line efficiency
 
 Byte order is little-endian throughout.
+
+##### 2.5 Lazy Partial Reads
+
+On disk data is read lazily, being represented via a minimal `Sector` struct prior to file IO. This design ensures:
+
+- **Fast random access:** Readers `seek` directly to the pertinent file region.
+- **Memory efficient:** Readers `take` exactly the required number of bytes instead of loading the entire file.
+
+Passing a small `Sector` instance can reduce overhead compared to passing an in-memory data buffer. Alternative read
+functions that return the underlying `Sector` without file IO are provided so that implementers can work directly with
+on disk storage regions.
+
+```rust
+/// A contiguous byte range within the file.
+#[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
+pub struct Sector {
+    /// Byte offset to the start of the segment.
+    offset: SeekFrom::start,
+    /// Length in bytes.
+    length: usize,
+}
+```
+
+`Sector` implements several traits for convenience:
+
+1. `Ord` and `PartialOrd` compare offsets. One sector is considered `less` than another which starts closer to EOF.
+2. `Eq` and `PartialEq` compare offsets and lengths. Two sectors are considered `equal` only if they start at the same
+   offset and extend for the same length i.e. represent identical data.
+3. `IntoIterator` allows implementers to stream bytes from the file.
+
+Sectors enforce the immutability of underlying on disk data. Implementers are advised to `read` data into an owned
+in-memory collection when mutability is required e.g. downstream data processing.
 
 ---
 
