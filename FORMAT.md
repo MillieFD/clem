@@ -60,17 +60,28 @@ the schema using a depth-first cursor-based stateful serializer with no per-fiel
 tree schema → array nodes → buffers
 ```
 
-For example `struct Outer { one: Inner, two: u8 }` and `struct Inner { one: bool, two: Option<f64> }` can be flattened
-to just three contiguous data buffers and one null bitmap arranged sequentially:
+For example `struct Outer { foo: Inner, bar: i32 }` and `struct Inner { baz: bool, quux: Option<f64> }` can be encoded as
+just three contiguous data buffers and one null bitmap arranged sequentially:
 
 ```text
 Outer
-├─ one: Inner
-│  ├─ one: column 0
-│  └─ two
-│     ├─ null bitmap
-│     └─ column 1
-└─ two: column 2
+├── foo: Inner
+│   ├── baz: bool
+│   │   ╭─ Buffer 0 ──────╮
+│   │   │ length: u64     │
+│   │   │ payload: [u8]   │
+│   │   ╰─────────────────╯
+│   └── quux: Option<f64>
+│       ╭─ Buffer 1 ──────╮
+│       │ length: u64     │
+│       │ bitmap: [u8]    │
+│       │ payload: [f64]  │
+│       ╰─────────────────╯
+└── bar: i32
+    ╭─ Buffer 2 ──────╮
+    │ length: u64     │
+    │ payload: [i32]  │
+    ╰─────────────────╯
 ```
 
 The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
