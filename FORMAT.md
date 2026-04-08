@@ -233,6 +233,7 @@ new segments are added.
 ```text
 Manifest
 ├─ metadata (optional)
+├─ dictionaries: BTreeMap (optional)
 └─ schemas: BTreeMap
    ├─ <schema-name>
    │  ├─ sector: Sector
