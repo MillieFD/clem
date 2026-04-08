@@ -129,17 +129,18 @@ Data Segment
 ├─ Buffer 0
 │  ├─ length: u64
 │  └─ payload: [u8]
+├─ Buffer 1
+│  ├─ length: u64
+│  ├─ bitmap: [u8]
+│  └─ payload: [u8]
 ⋮
 └─ Buffer N
 ```
 
-The schema maps each leaf node to a contiguous data buffer via the column index. This index is used to look up the
-corresponding column offset from the `offsets: [u64]` buffer. Buffer payload deserialization is informed by the column
-type described by the schema. All columns must have an equal number of rows. Each nullable column is accompanied by a
-packed nullable bitmap.
-
-TODO: Is it preferable to include nullable bits alognside each column or all together after the segment header?
-TODO: Nullability should be indicated in the `manifest` with `offset` and `length` for the null bitmap if present.
+The schema maps each leaf node to a contiguous data buffer. The offset of each buffer is read from the `offsets: [u64]`
+array using the column index. All columns must have an equal number of rows. Buffer payload deserialization is informed
+by the column type described by the schema. Where the schema indicates optional values, the buffer payload is preceded
+by a packed nullable bitmap.
 
 ##### 3.3 Dictionary Segments
 
