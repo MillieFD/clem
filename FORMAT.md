@@ -203,16 +203,6 @@ File
 └─ Metadata
 ```
 
-```rust
-/// A contiguous byte range within the file.
-struct Sector {
-    /// Byte offset to the start of the segment.
-    offset: SeekFrom,
-    /// Length in bytes.
-    length: usize,
-}
-```
-
 ##### 5.1 In Memory Accumulator
 
 Data is initially written to an **in memory** accumulator optimised for high-throughput ingestion. The `pub struct 
