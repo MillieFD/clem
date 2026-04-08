@@ -1,6 +1,6 @@
 # `clem` Format Specification
 
-Domain-agnostic n-dimensional data storage backend for analytical workloads.
+Domain-agnostic data storage for n-dimensional analytical workloads.
 
 ---
 
