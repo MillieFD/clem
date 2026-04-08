@@ -88,11 +88,35 @@ The schema itself can be conceptualised as a `struct` where each column becomes 
 
 ##### 2.4 Alignment
 
-`clem` enforces 64-bit alignment to ensure:
+`clem` uses **targeted 64-bit alignment** on critical data to ensure:
 
 - SIMD vectorisation
 - Memory mapped IO safety
 - Cache-line efficiency
+
+Padding is inserted immediately before fields that are accessed directly via `mmap` or processed by SIMD instructions.
+Alignment is not enforced for small or non-performance-critical fields to minimise file size.
+
+**Aligned fields**
+
+| Field                         | Reason                                                                          |
+|-------------------------------|---------------------------------------------------------------------------------|
+| Buffer `payload`              | Primary SIMD target; misalignment silently degrades vectorised reads or faults. |
+| Buffer `bitmap`               | Iterated alongside payload; must be cache-line paired with the payload.         |
+| Data Segment `offsets: [u64]` | Cast directly from `mmap`; misalignment is undefined behaviour.                 |
+
+Exactly one padding region is inserted per buffer; between the end of the header and the start of the first aligned
+field (`bitmap` if present, otherwise `payload`).
+
+**Unaligned fields**
+
+| Field                                        | Reason                                                            |
+|----------------------------------------------|-------------------------------------------------------------------|
+| Segment Header `variant: u8`                 | Read once per segment during discovery; never vectorised.         |
+| Segment Header `schema: u64` & `length: u64` | Fixed-width `u64` copied into owned values during header parsing. |
+| File Header `version: u8` and `magic: [u8]`  | Read once when file openned; zero benefit from alignment.         |
+| Schema Segment payload                       | Deserialised into owned type tree; not accessed on the hot path.  |
+| Manifest (CBOR)                              | Variable-length text formats deserialised into owned structures.  |
 
 Byte order is little-endian throughout.
 
