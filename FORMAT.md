@@ -252,10 +252,9 @@ impl Dataset {
 }
 ```
 
-Accumulators are `Sized` and `Sync`. Multi-producer workloads can accumulate independent columnar buffers in memory.
-Access to the underlying file is coordinated to prevent two accumulators writing to disk simultaneously.
-
-All interactions with the underlying file and global lock are implemented asynchronously using `smol`.
+Multi-producer workloads build segments using independent in memory accumulator instances spawned from the same dataset. 
+Access to the underlying file is coordinated to prevent two accumulators writing to disk simultaneously. All
+interactions with the underlying file and global lock are implemented asynchronously using `smol`.
 
 ##### 5.3 Write Cycle
 
