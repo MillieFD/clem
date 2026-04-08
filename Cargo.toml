@@ -2,6 +2,7 @@
 name = "clem"
 version = "0.1.0"
 edition = "2024"
+description = "Domain-agnostic high-throughput storage for n-dimensional analytical data, written in Rust."
 license = "BSD-3-Clause"
 authors = ["Amelia Fraser-Dale"]
 
