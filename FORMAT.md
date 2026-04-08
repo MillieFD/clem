@@ -264,9 +264,10 @@ impl Dataset {
 }
 ```
 
-Multi-producer workloads build segments using independent in memory accumulator instances spawned from the same dataset. 
-Access to the underlying file is coordinated to prevent two accumulators writing to disk simultaneously. All
-interactions with the underlying file and global lock are implemented asynchronously using `smol`.
+Accumulators are thread-local. Multi-producer workloads build segments independently via separate in memory accumulator
+instances spawned from the same dataset. Access to the underlying file is coordinated via the parent `Dataset` instance
+to prevent multiple accumulators writing to disk simultaneously. All interactions with the underlying file and global
+lock are implemented asynchronously using `smol`.
 
 ##### 5.3 Write Cycle
 
