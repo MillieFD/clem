@@ -334,9 +334,7 @@ the buffers are not empty.
 Users can spawn an arbitrary number of accumulators via `Dataset::accumulator`.
 
 ```rust
-impl Dataset {
-    pub fn accumulator(&self) -> Result<Accumulator, Error> { ... }
-}
+impl Dataset { pub fn accumulator(&self) -> Result<Accumulator, Error> { ... } }
 ```
 
 Accumulators are thread-local. Multi-producer workloads build segments independently via separate in memory accumulator
