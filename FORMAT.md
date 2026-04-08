@@ -202,23 +202,42 @@ statistics e.g. min and max values. The `manifest` acts like the index of a book
 - Random access
 - Predicate pruning
 
-The `manifest` is moved and updated as new segments are added.
+The manifest is encoded as **CBOR** with definite-length text maps to enable schema and column access by name. A
+`metadata` key is included when user-specified file-level metadata is present. The manifest is moved and updated when
+new segments are added.
 
-```toml
-[metadata]
-offset = 4096
-length = 512
-
-[schema_name]
-offset = 128
-length = 64
-
-[[schema_name.column_name.buffers]]
-offset = 128
-length = 64
-min = 10
-max = 20
+```text
+Manifest
+├─ metadata (optional)
+└─ schemas: BTreeMap
+   ├─ <schema-name>
+   │  ├─ sector: Sector
+   │  └─ columns: BTreeMap
+   │     ├─ <column-name>
+   │     │  └─ buffers: [Buffer]
+   │     │     ├─ sector: Sector
+   │     │     ├─ min: T
+   │     │     └─ max: T
+   │     ⋮
+   │     └─ <final-column>
+   ⋮
+   └─ <final-schema>
 ```
+
+Schema lookup by name returns the corresponding schema segment and a map of all schema columns. A `BTreeMap<String,
+Schema>` sorted in lexicographic order is used to ensure a fully deterministic layout regardless of insertion order.
+
+```text
+manifest["schema_name"] → Schema { segment: Segment, columns: BTreeMap<String, Column> }
+```
+
+Column lookup by name returns the corresponding collection of buffers across all on disk data segments.
+
+```text
+manifest["schema_name"]["column_name"] → [Buffer]
+```
+
+Each `Buffer` contains a `sector: Sector` alongside data statistics such as `min` and `max` for predicate pruning.
 
 ##### 4.1 Metadata
 
