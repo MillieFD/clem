@@ -7,3 +7,6 @@ license = "BSD-3-Clause"
 authors = ["Amelia Fraser-Dale"]
 
 [dependencies]
+smol = "2.0"
+serde = "1.0"
+memmap2 = "0.9"
