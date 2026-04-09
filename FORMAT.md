@@ -65,23 +65,23 @@ as just three contiguous data buffers and one null bitmap arranged sequentially:
 
 ```text
 Outer
-├── foo: Inner
-│   ├── baz: bool
-│   │   ╭─ Buffer 0 ──────╮
-│   │   │ length: u64     │
-│   │   │ payload: [u8]   │
-│   │   ╰─────────────────╯
-│   └── quux: Option<f64>
-│       ╭─ Buffer 1 ──────╮
-│       │ length: u64     │
-│       │ bitmap: [u8]    │
-│       │ payload: [f64]  │
-│       ╰─────────────────╯
-└── bar: i32
-    ╭─ Buffer 2 ──────╮
-    │ length: u64     │
-    │ payload: [i32]  │
-    ╰─────────────────╯
+├─ foo: Inner
+│  ├─ baz: bool
+│  │  ╭─ Buffer 0 ──────╮
+│  │  │ length: u64     │
+│  │  │ payload: [u8]   │
+│  │  ╰─────────────────╯
+│  └─ quux: Option<f64>
+│     ╭─ Buffer 1 ──────╮
+│     │ length: u64     │
+│     │ bitmap: [u8]    │
+│     │ payload: [f64]  │
+│     ╰─────────────────╯
+└─ bar: i32
+   ╭─ Buffer 2 ──────╮
+   │ length: u64     │
+   │ payload: [i32]  │
+   ╰─────────────────╯
 ```
 
 The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
