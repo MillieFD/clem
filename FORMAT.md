@@ -50,7 +50,7 @@ Whole-segment deletion is permitted but expensive; all downstream segments are m
 ##### 2.3 Arbitrary Types
 
 `clem` understands **platform-agnostic** primitive types such as `u32` or `f64`. Platform-dependent types such as
-`usize` are deliberatley ommitted to ensure file portability. Additional user-defined types are embedded directly in
+`usize` are deliberately omitted to ensure file portability. Additional user-defined types are embedded directly in
 the schema using a depth-first cursor-based stateful serializer with no per-field allocation on the hot path.
 
 - Leaf nodes map to contiguous columnar data buffers via index.
