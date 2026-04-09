@@ -209,15 +209,64 @@ array using the column index. All columns must have an equal number of rows. Buf
 by the column type described by the schema. Where the schema indicates optional values, the buffer payload is preceded
 by a packed nullable bitmap.
 
-##### 3.3 Dictionary Segments
+##### 4 Dictionaries
 
-The storage cost for large types with repetitive values can be amortised using a map segment.
+The storage cost for large types with repetitive values can be amortised using a dictionary, which is implemented as
+user-friendly abstraction over the underlying schema and data segments coordinated via the manifest.
 
-TODO: What is the best layout for a dictionary segment? Reference a schema segment and mark which column is the key?
+```rust
+impl Dataset {
+    /// Returns an exclusive reference to the specified [`Dictionary`]. Initialises a new [`Dictionary`] with the
+    /// specified `key: K` and `value: V` types if no entry exists for the specified `name: S`.
+    ///
+    /// ### Errors
+    ///
+    /// Returns an [`Error`] if a dictionary with the specified `name` already exists with different `K` or `V` types.
+    pub async fn dictionary<K, V, S>(&self, name: S) -> Result<RwLock<Dictionary>, Error>
+    where
+        K: crate::Key, // Marker trait for approved key types: u8, u16, u32, u64, u128
+        V: serde::Serialize,
+        S: std::fmt::Display,
+    { ... }
+}
+```
+
+The `Dataset` (exclusive file handle) contains a `dictionaries: BTreeMap` field which is parsed from the manifest when
+the file is first opened via `Dataset::open` or `Dataset::new`. Note that a platform-agnostic `BTreeMap` is used to
+ensure determinism; the order of elements within the map does not necessarily represent the physical order on disk.
+
+```text
+user types → dictionary type → schema segment + [data segments]
+```
+
+The `Dataset::dictionary` function is used to create and retrieve named dictionaries wrapped in an asyncronous `RwLock`.
+Callers must `await` due to file IO on the creation branch; existing dictionaries return `Poll::Ready` immediatley.
+The `Dictionary` supports multiple simultaneous readers or a single exclusive writer to prevent key collision; callers
+can choose to `await` mutable or immutable access.
+
+##### 4.1 Dictionary Schema
+
+The dictionary wraps user-defined `K` and `V` types in a parent struct `D { key: K, value: V }` which can then be
+serialized into a schema segment. The schema serializer resolves `D` into a collection of named columnar data buffers.
+
+```text
+Schema Segment
+├─ Header
+│  ├─ variant: u8
+│  └─ length: u64
+└─ Payload
+   ├─ key: K → buffer 0: [K]
+   └─ value: V → buffers 1..N
+```
+
+##### 4.1 Dictionary Entries
+
+Entries are stored via ordinary data segments referencing the dictionary schema. Each data segment row represents a
+single key-value pair.
 
 ---
 
-### 4. Manifest
+### 5. Manifest
 
 A `manifest` footer lists file segments by type. Data segments are grouped by schema alongside segment-level
 statistics e.g. min and max values. The `manifest` acts like the index of a book to enhance:
@@ -264,7 +313,7 @@ manifest["schema_name"]["column_name"] → [Buffer]
 
 Each `Buffer` contains a `sector: Sector` alongside data statistics such as `min` and `max` for predicate pruning.
 
-##### 4.1 Metadata
+##### 5.1 Metadata
 
 Implementers can use the optional free-form `metadata.toml` to attach file-level domain-specific information such as:
 
@@ -274,24 +323,14 @@ Implementers can use the optional free-form `metadata.toml` to attach file-level
 
 If a metadata section is included in the file, a corresponding `length` and `offset` are described in the `manifest`.
 
-### 5. File Layout
+### 6. Lifecycle
 
-```text
-File
-├─ Header
-│  ├─ magic: [u8]
-│  ├─ version: u8
-│  └─ manifest
-│     ├─ offset: u64
-│     └─ length: u64
-├─ Segment 0
-⋮
-├─ Segment N
-├─ Manifest
-└─ Metadata
-```
+`clem` maximises read and write performance by separating the data lifecycle into two phases:
 
-##### 5.1 In Memory Accumulator
+1. **In memory** accumulator optimised for high-throughput ingestion.
+2. **On disk** archive optimised for range-based querying across arbitrary dimensions.
+
+##### 6.1 In Memory Accumulator
 
 Data is initially written to an **in memory** accumulator optimised for high-throughput ingestion. The `pub struct 
 Accumulator` is generic over any type `R` that implements `serde::Serialize`. The accumulator implements
@@ -330,20 +369,37 @@ where
 Users can explicitly write data to disk using the `write` function. Data is automatically written to disk on `drop` if
 the buffers are not empty.
 
-##### 5.2 Parallelism & Asynchronicity
+##### 6.2 Parallel Accumulators
 
-Users can spawn an arbitrary number of accumulators via `Dataset::accumulator`.
+Accumulators are thread-local. Multi-producer workloads build segments independently via separate in memory accumulator
+instances spawned from the same dataset. Users can spawn an arbitrary number of accumulators via `Dataset::accumulator`.
 
 ```rust
 impl Dataset { pub fn accumulator(&self) -> Result<Accumulator, Error> { ... } }
 ```
 
-Accumulators are thread-local. Multi-producer workloads build segments independently via separate in memory accumulator
-instances spawned from the same dataset. Access to the underlying file is coordinated via the parent `Dataset` instance
-to prevent multiple accumulators writing to disk simultaneously. All interactions with the underlying file and global
-lock are implemented asynchronously using `smol`.
+The `Dataset` (exclusive file handle) coordinates access to the underlying file; preventing multiple accumulators from
+writing to disk simultaneously. All interactions with the underlying file and global lock are implemented asynchronously
+via `smol`.
 
-##### 5.3 Write Cycle
+##### 6.3 On Disc File
+
+```text
+File
+├─ Header
+│  ├─ magic: [u8]
+│  ├─ version: u8
+│  └─ manifest
+│     ├─ offset: u64
+│     └─ length: u64
+├─ Segment 0
+⋮
+├─ Segment N
+├─ Manifest
+└─ Metadata
+```
+
+##### 6.4 Write Cycle
 
 Appending a new segment to the file – regardless of type – requires four steps:
 
