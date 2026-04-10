@@ -383,6 +383,7 @@ Manifest
    │     ├─ <column-name>
    │     │  └─ buffers: [Buffer]
    │     │     ├─ sector: Sector
+   │     │     ├─ count: u32
    │     │     ├─ min: T
    │     │     └─ max: T
    │     ⋮
@@ -460,7 +461,7 @@ where
 ```
 
 Users can explicitly write data to disk using the `write` function. Data is automatically written to disk on `drop` if
-the buffers are not empty.
+the buffers are not empty, or if `count` reaches `u32::MAX` due to size limitation in the manifest.  
 
 ##### 6.2 Parallel Accumulators
 
