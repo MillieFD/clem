@@ -67,21 +67,21 @@ as just three contiguous data buffers and one null bitmap arranged sequentially:
 Outer
 ├─ foo: Inner
 │  ├─ baz: bool
-│  │  ╭─ Buffer 0 ──────╮
-│  │  │ length: u64     │
-│  │  │ payload: [u8]   │
-│  │  ╰─────────────────╯
+│  │  ╭─ Buffer 0 ─────────╮
+│  │  │ length: NonZeroU64 │
+│  │  │ payload: [u8]      │
+│  │  ╰────────────────────╯
 │  └─ quux: Option<f64>
-│     ╭─ Buffer 1 ──────╮
-│     │ length: u64     │
-│     │ bitmap: [u8]    │
-│     │ payload: [f64]  │
-│     ╰─────────────────╯
+│     ╭─ Buffer 1 ─────────╮
+│     │ length: NonZeroU64 │
+│     │ bitmap: [u8]       │
+│     │ payload: [f64]     │
+│     ╰────────────────────╯
 └─ bar: i32
-   ╭─ Buffer 2 ──────╮
-   │ length: u64     │
-   │ payload: [i32]  │
-   ╰─────────────────╯
+   ╭─ Buffer 2 ─────────╮
+   │ length: NonZeroU64 │
+   │ payload: [i32]     │
+   ╰────────────────────╯
 ```
 
 The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
@@ -105,7 +105,8 @@ values:  [a, b, c, d, e, f, g, h]
 
 The serialized on disk example (above) is deserialized into the memory representation (below). Implementers must specify
 which type to use for offset storage based on the number of expected elements. An `Offset` marker trait is implemented
-for approved types: u8, u16, u32, u64, u128.
+for approved types: NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128. The `offsets` buffer can simultaneously
+encode nullability by leveraging niche-optimisation on non-zero types.
 
 ```text
 Row 0 → values[..3] → "abc"
@@ -138,26 +139,26 @@ Alignment is not enforced for small or non-performance-critical fields to minimi
 
 **Aligned fields**
 
-| Field                         | Reason                                                                          |
-|-------------------------------|---------------------------------------------------------------------------------|
-| Buffer `payload`              | Primary SIMD target; misalignment silently degrades vectorised reads or faults. |
-| Buffer `bitmap`               | Iterated alongside payload; must be cache-line paired with the payload.         |
-| Data Segment `offsets: [u64]` | Cast directly from `mmap`; misalignment is undefined behaviour.                 |
-| Unsized `offsets` buffer      | Read directly during boundary lookup; 64-bit alignment improves access safety.  |
-| Unsized `values` buffer       | Contiguous hot-path payload; 64-bit alignment benefits traversal efficiency.    |
+| Field                  | Reason                                                                          |
+|------------------------|---------------------------------------------------------------------------------|
+| Buffer `payload`       | Primary SIMD target; misalignment silently degrades vectorised reads or faults. |
+| Buffer `bitmap`        | Iterated alongside payload; must be cache-line paired with the payload.         |
+| Data Segment `offsets` | Cast directly from `mmap`; misalignment is undefined behaviour.                 |
+| Unsized Type `offsets` | Read directly during boundary lookup; 64-bit alignment improves access safety.  |
+| Unsized Type `values`  | Contiguous hot-path payload; 64-bit alignment benefits traversal efficiency.    |
 
 Exactly one padding region is inserted per buffer; between the end of the header and the start of the first aligned
 field (`bitmap` if present, otherwise `payload`).
 
 **Unaligned fields**
 
-| Field                                        | Reason                                                            |
-|----------------------------------------------|-------------------------------------------------------------------|
-| Segment Header `variant: u8`                 | Read once per segment during discovery; never vectorised.         |
-| Segment Header `schema: u64` & `length: u64` | Fixed-width `u64` copied into owned values during header parsing. |
-| File Header `version: u8` and `magic: [u8]`  | Read once when file opened; zero benefit from alignment.          |
-| Schema Segment payload                       | Deserialised into owned type tree; not accessed on the hot path.  |
-| Manifest (CBOR)                              | Variable-length text formats deserialised into owned structures.  |
+| Field                              | Reason                                                            |
+|------------------------------------|-------------------------------------------------------------------|
+| Segment Header `variant`           | Read once per segment during discovery; never vectorised.         |
+| Segment Header `schema` & `length` | Fixed-width `u64` copied into owned values during header parsing. |
+| File Header `version` and `magic`  | Read once when file opened; zero benefit from alignment.          |
+| Schema Segment payload             | Deserialised into owned type tree; not accessed on the hot path.  |
+| Manifest (CBOR)                    | Variable-length text formats deserialised into owned structures.  |
 
 Byte order is little-endian throughout.
 
@@ -213,7 +214,7 @@ schema checks.
 Schema Segment
 ├─ Header
 │  ├─ variant: u8
-│  └─ length: u64
+│  └─ length: NonZeroU64
 └─ Payload: CBOR
 ```
 
@@ -223,32 +224,32 @@ corresponding columnar data buffer. Each schema segment encodes **one** schema a
 
 ##### 3.2 Data Segments
 
-Each data segment is associated with **one** schema segment with an offset – for random access reads – encoded via the
-`schema: u64` header field. This association is principally included for data integrity and crash recovery; the
-optimised read path pre-filters data segments by schema using the `manifest`.
+Each data segment is associated with **one** schema via the schema segment offset – for random access reads – encoded
+in the `schema: NonZeroU64` header field. This association is principally included for data integrity and crash
+recovery; the optimised read path pre-filters data segments by schema using the `manifest`.
 
 ```text
 Data Segment
 ├─ Header
 │  ├─ variant: u8
-│  ├─ schema: u64
-│  ├─ length: u64
-│  └─ offsets: [u64]
+│  ├─ schema: NonZeroU64
+│  ├─ length: NonZeroU64
+│  └─ offsets: [NonZeroU64]
 ├─ Buffer 0
-│  ├─ length: u64
+│  ├─ length: NonZeroU64
 │  └─ payload: [u8]
 ├─ Buffer 1
-│  ├─ length: u64
+│  ├─ length: NonZeroU64
 │  ├─ bitmap: [u8]
 │  └─ payload: [u8]
 ⋮
 └─ Buffer N
 ```
 
-The schema maps each leaf node to a contiguous data buffer. The offset of each buffer is read from the `offsets: [u64]`
-array using the column index. All columns must have an equal number of rows. Buffer payload deserialization is informed
-by the column type described by the schema. Where the schema indicates optional values, the buffer payload is preceded
-by a packed nullable bitmap.
+The schema maps each leaf node to a contiguous data buffer. The offset of each buffer is read from the `offsets` array
+using the column index. All columns must have an equal number of rows. Buffer payload deserialization is informed by the
+column type described by the schema. Where the schema indicates optional values, the buffer payload is preceded by a
+packed nullable bitmap.
 
 ### 4 Dictionaries
 
@@ -270,8 +271,8 @@ impl Dataset {
     /// Returns an [`Error`] if a dictionary with the specified `name` already exists using a different `V` type.
     pub async fn dictionary<K, V>(&mut self, name: impl Display) -> Result<RwLock<Dictionary<V>>, Error>
     where
-        K: Sized + Ord,
-        V: serde::Serialize,
+        K: Serialize + Sized + Ord,
+        V: Serialize,
     { ... }
 }
 ```
@@ -345,8 +346,8 @@ index prevents key collision. Implementers can specify the key numeric type base
 ```rust
 impl<K, V> Index<K, V>
 where
-    K: crate::IndexKey, // Marker trait for approved key types: u8, u16, u32, u64, u128
-    V: serde::Serialize,
+    K: Serialize + crate::Offset, // Marker trait for NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128
+    V: Serialize,
 {
     pub fn push(&mut self, value: V) -> K { ... }
 }
@@ -383,7 +384,7 @@ Manifest
    │     ├─ <column-name>
    │     │  └─ buffers: [Buffer]
    │     │     ├─ sector: Sector
-   │     │     ├─ count: u32
+   │     │     ├─ count: NonZeroU32
    │     │     ├─ min: T
    │     │     └─ max: T
    │     ⋮
@@ -489,9 +490,10 @@ File
 ├─ Header
 │  ├─ magic: [u8; 4] // b"clem"
 │  ├─ version: u8
+│  ├─ tail: NonZeroU64
 │  └─ manifest
-│     ├─ offset: u64
-│     └─ length: u64
+│     ├─ offset: NonZeroU64
+│     └─ length: NonZeroU64
 ├─ Segment 0
 ⋮
 ├─ Segment N
