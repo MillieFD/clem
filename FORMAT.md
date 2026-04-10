@@ -487,7 +487,7 @@ clem with a canonical schema – but must remove the prepended data before passi
 ```text
 File
 ├─ Header
-│  ├─ magic: [u8; 4]  // b"clem"
+│  ├─ magic: [u8; 4] // b"clem"
 │  ├─ version: u8
 │  └─ manifest
 │     ├─ offset: u64
@@ -495,6 +495,7 @@ File
 ├─ Segment 0
 ⋮
 ├─ Segment N
+├─ Empty (optional)
 ├─ Manifest
 └─ Metadata
 ```
@@ -503,11 +504,81 @@ A major version number is embedded in the file header to indicate breaking chang
 and backwards compatibility across version numbers is not guaranteed. Implementers must reject any file with an
 unrecognised version number.
 
+```text
+[Header] [Segment 0] ... [Segment N] ... [Manifest] [Metadata]
+                               tail ↑    ↑ offset
+```
+
+The `tail: NonZeroU64` field records the byte offset immediately following the final committed segment. New segments are
+always appended from `tail`, not from EOF. An empty region may exist between `tail` and the start of the manifest when
+appending segments that are shorter than the combined manifest and metadata. This empty region is filled during the next
+write cycle.
+
 ##### 6.4 Write Cycle
+
+Let `m` denote the combined byte length of the existing manifest and metadata (if present). Let `s` denote the byte
+length of the incoming segment. The write cycle exploits the relationship between `s` and `m` to guarantee that the
+previous manifest is never overwritten before the new manifest pointer is committed to the file header.
 
 Appending a new segment to the file – regardless of type – requires four steps:
 
-1. Manifest and metadata (if present) read into memory.
-2. New segment written at EOF, overwriting the previous manifest and metadata.
-3. Manifest updated with additional segment information.
-4. In memory manifest and metadata written to disk at new EOF.
+**Phase 1:*** Write the new manifest at EOF.
+
+The exiting manifest is read into memory and updated to include the incoming segment. The new manifest and metadata (if
+present) are written to a postition relative to `tail` depending on `s` and `m`:
+
+- `s > m` → The new segment is larger than the combined existing manifest and metadata. The new manifest is written
+  starting `s` bytes after `tail` to reserve the exact disk space required by the incomming segment. This introduces a
+  transient empty region between the previous EOF and the new manifest offset.
+
+- `s == m` → The new segment exactly fills the space occupied by the old manifest and metadata. The new manifest is
+  written immediately following the prefious EOF with no empty region.
+
+- `s < m` → The new segment is smaller than the combined existing manifest and metadata. The new manifest is written
+  immediately following the prefious EOF with no empty region, leaving an unreferenced trailing region from `tail + s`
+  to the new manifest offset. This trailing region lies beyond `tail` and is therefore invisible to readers; it is
+  naturally overwritten in the next write cycle.
+
+At the end of step 1, the file contains two manifests. The old manifest remains authoritative because the file header
+has not yet been updated. A crash in phase 1 leaves the file contents intact. The new manifest are unreferenced and will
+be overwritten in the next write cycle as `tail` remains unmoved.
+
+```text
+                                          Reserved for Incoming Segment
+                                    ├───────────────────────────────────────┤
+[Header] [Segment 0] ... [Segment N] ... [Prev Manifest] [Prev Metadata] ... [New Manifest] [New Metadata]
+                               tail ↑   ↑ offset
+```
+
+**Phase 2:*** Update the file header manifest pointer.
+
+The `manifest.offset` and `manifest.length` fields in the file header are overwritten to point to the new manifest.
+The newly authoritative manifest references a (currently unwritten) segment after `tail` which will be detected during
+the next `open` call.
+
+```text
+                                          Reserved for Incoming Segment
+                                    ├───────────────────────────────────────┤
+[Header] [Segment 0] ... [Segment N] ... [Prev Manifest] [Prev Metadata] ... [New Manifest] [New Metadata]
+                               tail ↑                                       ↑ offset
+```
+
+**Phase 3:*** Write the incoming segment.
+
+The incoming segment is written starting from `tail` and overwriting the old manifest and any empty regions if present.
+Crash detection and recovery is identical to phase 2.
+
+```text
+[Header] [Segment 0] ... [Segment N] [New Segment] ... [New Manifest] [New Metadata]
+                               tail ↑                 ↑ offset
+```
+
+**Phase 4:** Update the file header tail pointer.
+
+The `tail` field is advanced to `tail + s`, pointing immediately after the end of the newly written segment. The write
+cycle is complete with `manifest.offset <= tail` and the manifest correctly indexing all committed segments.
+
+```text
+[Header] [Segment 0] ... [New Segment] ... [New Manifest] [New Metadata]
+                                 tail ↑   ↑ offset
+```
