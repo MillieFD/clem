@@ -155,7 +155,7 @@ field (`bitmap` if present, otherwise `payload`).
 |----------------------------------------------|-------------------------------------------------------------------|
 | Segment Header `variant: u8`                 | Read once per segment during discovery; never vectorised.         |
 | Segment Header `schema: u64` & `length: u64` | Fixed-width `u64` copied into owned values during header parsing. |
-| File Header `version: u8` and `magic: [u8]`  | Read once when file openned; zero benefit from alignment.         |
+| File Header `version: u8` and `magic: [u8]`  | Read once when file opened; zero benefit from alignment.          |
 | Schema Segment payload                       | Deserialised into owned type tree; not accessed on the hot path.  |
 | Manifest (CBOR)                              | Variable-length text formats deserialised into owned structures.  |
 
@@ -177,7 +177,7 @@ on disk storage regions.
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Sector {
     /// Byte offset to the start of the segment.
-    offset: SeekFrom::start,
+    offset: SeekFrom,
     /// Length in bytes.
     length: usize,
 }
@@ -225,7 +225,7 @@ corresponding columnar data buffer. Each schema segment encodes **one** schema a
 
 Each data segment is associated with **one** schema segment with an offset – for random access reads – encoded via the
 `schema: u64` header field. This association is principally included for data integrity and crash recovery; the
-optmised read path pre-filters data segments by schema using the `manifest`.
+optimised read path pre-filters data segments by schema using the `manifest`.
 
 ```text
 Data Segment
@@ -276,8 +276,8 @@ impl Dataset {
 }
 ```
 
-The `Dataset::dictionary` function is used to create and retrieve named dictionaries wrapped in an asyncronous `RwLock`.
-Callers must `await` due to file IO on the creation branch; existing dictionaries return `Poll::Ready` immediatley.
+The `Dataset::dictionary` function is used to create and retrieve named dictionaries wrapped in an async `RwLock`.
+Callers must `await` due to file IO on the creation branch; existing dictionaries return `Poll::Ready` immediately.
 The `Dictionary` supports multiple simultaneous readers or a single exclusive writer to prevent key collision; callers
 can choose to `await` mutable or immutable access.
 
@@ -352,7 +352,7 @@ where
 }
 ```
 
-The `Index` is implemented as a standard dictionary with one notable optimisation: the on disk `keys` column is ommitted
+The `Index` is implemented as a standard dictionary with one notable optimisation: the on disk `keys` column is omitted
 as values are searched by index. The manifest stores `count` for each data segment which enables direct access via index
 arithmetic; if data segment 0 contains `100` values and data segment 1 contains a further `45` values, entry number
 `110` is located at index `10` in data segment 0.
@@ -476,7 +476,7 @@ The `Dataset` (exclusive file handle) coordinates access to the underlying file;
 writing to disk simultaneously. All interactions with the underlying file and global lock are implemented asynchronously
 via `smol`.
 
-##### 6.3 On Disc File
+##### 6.3 On Disk File
 
 ```text
 File
