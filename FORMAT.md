@@ -104,9 +104,9 @@ values:  [a, b, c, d, e, f, g, h]
 ```
 
 The serialized on disk example (above) is deserialized into the memory representation (below). Implementers must specify
-which type to use for offset storage based on the number of expected elements. An `Offset` marker trait is implemented
-for approved types: NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128. The `offsets` buffer can simultaneously
-encode nullability by leveraging niche-optimisation on non-zero types.
+which type to use for offset storage based on the number of expected elements. A `NonZeroUnsigned` marker trait is
+implemented for approved types: NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128. The `offsets` buffer can
+simultaneously encode nullability by leveraging niche-optimisation on non-zero types.
 
 ```text
 Row 0 → values[..3] → "abc"
@@ -346,7 +346,7 @@ index prevents key collision. Implementers can specify the key numeric type base
 ```rust
 impl<K, V> Index<K, V>
 where
-    K: Serialize + crate::Offset, // Marker trait for NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128
+    K: Serialize + crate::NonZeroUnsigned, // Marker trait for approved key types
     V: Serialize,
 {
     pub fn push(&mut self, value: V) -> K { ... }
