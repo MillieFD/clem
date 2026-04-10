@@ -143,6 +143,8 @@ Alignment is not enforced for small or non-performance-critical fields to minimi
 | Buffer `payload`              | Primary SIMD target; misalignment silently degrades vectorised reads or faults. |
 | Buffer `bitmap`               | Iterated alongside payload; must be cache-line paired with the payload.         |
 | Data Segment `offsets: [u64]` | Cast directly from `mmap`; misalignment is undefined behaviour.                 |
+| Unsized `offsets` buffer      | Read directly during boundary lookup; 64-bit alignment improves access safety.  |
+| Unsized `values` buffer       | Contiguous hot-path payload; 64-bit alignment benefits traversal efficiency.    |
 
 Exactly one padding region is inserted per buffer; between the end of the header and the start of the first aligned
 field (`bitmap` if present, otherwise `payload`).
