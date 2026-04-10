@@ -86,7 +86,46 @@ Outer
 
 The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
 
-##### 2.4 Alignment
+##### 2.4 Unsized Types
+
+It is not possible to predetermine the disk space required by each instance of an unsized type; there is no guarantee
+that one `Vec<T>` contains the same number of elements as another `Vec<T>`. The `clem` type serializer therefore parses
+unsized types into:
+
+1. Columnar metadata describing boundaries
+2. A contiguous region of elements
+
+This design ensures O(1) random access and avoids per-element pointer chasing. Sequential scans across the contained
+elements `[T]` remains linear; leveraging columnar optimisations for SIMD and prefetch.
+
+```text
+offsets: [3, 6, 6]
+values:  [a, b, c, d, e, f, g, h]
+```
+
+The serialized on disk example (above) is deserialized into the memory representation (below). Implementers must specify
+which type to use for offset storage based on the number of expected elements. An `Offset` marker trait is implemented
+for approved types: u8, u16, u32, u64, u128.
+
+```text
+Row 0 → values[..3] → "abc"
+Row 1 → values[3..6] → "def"
+Row 2 → values[6..6] → "" (empty)
+Row 3 → values[6..] → "gh"
+```
+
+Nested unsized types serialize into a flattened tree with multiple offset layers. The compositional design preserves
+the performance advantages associated with contiguous value storage; namely predictable vectorised traversal. Scanning
+performance across the contiguous inner `values` buffer is unaffected by deep nesting. The inner offsets buffer is
+aligned in memory order of traversal to improve cache locality during nested iteration and reduce TLB misses.
+
+```text
+inner offsets
+outer offsets
+values
+```
+
+##### 2.5 Alignment
 
 `clem` uses **targeted 64-bit alignment** on critical data to ensure:
 
@@ -120,7 +159,7 @@ field (`bitmap` if present, otherwise `payload`).
 
 Byte order is little-endian throughout.
 
-##### 2.5 Lazy Partial Reads
+##### 2.6 Lazy Partial Reads
 
 On disk data is read lazily, being represented via a minimal `Sector` struct prior to file IO. This design ensures:
 
