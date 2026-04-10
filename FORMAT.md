@@ -461,7 +461,7 @@ where
 ```
 
 Users can explicitly write data to disk using the `write` function. Data is automatically written to disk on `drop` if
-the buffers are not empty, or if `count` reaches `u32::MAX` due to size limitation in the manifest.  
+the buffers are not empty, or if `count` reaches `u32::MAX` due to size limitation in the manifest.
 
 ##### 6.2 Parallel Accumulators
 
@@ -478,10 +478,14 @@ via `smol`.
 
 ##### 6.3 On Disk File
 
+The file header begins with a magic byte sequence used to identify the file type. Implementers must reject incorrect
+magic byte sequences. Implementers may prepend their own file header – e.g. to indicate a specific file type built atop
+clem with a canonical schema – but must remove the prepended data before passing to the underlying `clem` reader.
+
 ```text
 File
 ├─ Header
-│  ├─ magic: [u8]
+│  ├─ magic: [u8; 4]  // b"clem"
 │  ├─ version: u8
 │  └─ manifest
 │     ├─ offset: u64
@@ -492,6 +496,10 @@ File
 ├─ Manifest
 └─ Metadata
 ```
+
+A major version number is embedded in the file header to indicate breaking changes in the format specification. Forwards
+and backwards compatibility across version numbers is not guaranteed. Implementers must reject any file with an
+unrecognised version number.
 
 ##### 6.4 Write Cycle
 
