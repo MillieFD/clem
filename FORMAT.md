@@ -441,10 +441,10 @@ where
     R: serde::Serialize
 {
     /// Append a row-wise record to the internal columnar [`Vec`] buffers.
-    pub fn push(&self, record: R) { ... }
+    pub fn push(&mut self, record: R) { ... }
 
     /// Extends the accumulator buffers with the contents of an iterator.
-    pub fn extend<I>(&self, iterator: I) where I: IntoIterator<Item = R> { ... }
+    pub fn extend<I>(&mut self, iterator: I) where I: IntoIterator<Item = R> { ... }
 
     /// Builds a schema segment for type `R` and writes to disk. Returns the written [`Sector`] is successful, which
     /// is also cached to the lazily initialised `schema: Sector` field.
@@ -456,10 +456,10 @@ where
     ///
     /// [`Write`] uses the lazily initialised `schema: Sector` field which calls [`Self::schema`] on first access,
     /// hence ensuring that a schema segment is always written to disk before any dependent data segments.
-    pub async fn write(&self) -> Result<Sector, Error> { ... }
+    pub async fn write(&mut self) -> Result<Sector, Error> { ... }
 
     /// Reinitialise the columnar data buffers without writing data to disk. All accumulated data is permanently lost.
-    pub fn discard(&self) { ... }
+    pub fn discard(&mut self) { ... }
 }
 ```
 
