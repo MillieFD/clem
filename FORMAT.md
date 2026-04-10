@@ -269,7 +269,7 @@ impl Dataset {
     /// ### Errors
     ///
     /// Returns an [`Error`] if a dictionary with the specified `name` already exists using a different `V` type.
-    pub async fn dictionary<K, V>(&mut self, name: impl Display) -> Result<RwLock<Dictionary<V>>, Error>
+    pub async fn dictionary<K, V>(&mut self, name: impl Display) -> Result<RwLock<Dictionary<K, V>>, Error>
     where
         K: Serialize + Sized + Ord,
         V: Serialize,
