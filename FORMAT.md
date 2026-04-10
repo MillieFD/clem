@@ -250,7 +250,7 @@ array using the column index. All columns must have an equal number of rows. Buf
 by the column type described by the schema. Where the schema indicates optional values, the buffer payload is preceded
 by a packed nullable bitmap.
 
-##### 4 Dictionaries
+### 4 Dictionaries
 
 The storage cost for large types with repetitive values can be amortised using a dictionary, which is implemented as
 user-friendly abstraction over the underlying schema and data segments coordinated via the manifest.
