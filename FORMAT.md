@@ -206,9 +206,11 @@ readers to skip to the next segment (no segment footer required).
 ##### 3.1 Schema Segments
 
 To construct a schema, users must first define a `struct` which implements `serde::Serialize`. Each field becomes a
-column with a `name` and `type`. Each instance of the `struct` represents a row. This design moves schema validity
+column with a `name` and `type`. Each instance of the struct represents a row. This design moves schema validity
 checks to compile time by leveraging Rust's type safety, improving data ingestion speed by eliminating costly runtime
-schema checks.
+schema checks. The type tree is serialized into CBOR; encoding the `name` and `type` of all internal and leaf nodes.
+The user schema struct (root node) defines the schema name which is encoded in the type tree and written to the file
+manifest `schemas: BTreeMap` to enable schema retrieval by name.
 
 ```text
 Schema Segment
