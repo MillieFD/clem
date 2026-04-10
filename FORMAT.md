@@ -21,7 +21,7 @@ benefit from a minimal high-performance core library which can be further enhanc
 - **Performant:** Zero-copy random access reads via `mmap`.
 
 To achieve these design goals, `clem` must decouple **logical structure** (types, schemas) from **physical storage**
-segments). This document describes the format design and shows how each goal is met.
+(segments). This document describes the format design and shows how each goal is met.
 
 ---
 
