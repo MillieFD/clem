@@ -214,7 +214,7 @@ Schema Segment
 ├─ Header
 │  ├─ variant: u8
 │  └─ length: u64
-└─ Payload
+└─ Payload: CBOR
 ```
 
 Readers can directly query data from arbitrary named fields – without reconstructing a type instance – by reading the
