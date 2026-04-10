@@ -253,6 +253,11 @@ by a packed nullable bitmap.
 The storage cost for large types with repetitive values can be amortised using a dictionary, which is implemented as
 user-friendly abstraction over the underlying schema and data segments coordinated via the manifest.
 
+The `Dataset` (exclusive file handle) contains a `dictionaries: BTreeMap` field which is parsed from the manifest when
+the file is first opened via `Dataset::open` or `Dataset::new`. The `BTreeMap` is used to look up dictionaries by name.
+Note that a platform-agnostic `BTreeMap` is used to ensure determinism; the order of elements within the map does not
+necessarily represent the physical order on disk.
+
 ```rust
 impl Dataset {
     /// Returns an exclusive reference to the specified [`Dictionary`]. Initialises a new [`Dictionary`] with the
@@ -260,22 +265,13 @@ impl Dataset {
     ///
     /// ### Errors
     ///
-    /// Returns an [`Error`] if a dictionary with the specified `name` already exists with different `K` or `V` types.
-    pub async fn dictionary<K, V, S>(&self, name: S) -> Result<RwLock<Dictionary>, Error>
+    /// Returns an [`Error`] if a dictionary with the specified `name` already exists using a different `V` type.
+    pub async fn dictionary<K, V>(&mut self, name: impl Display) -> Result<RwLock<Dictionary<V>>, Error>
     where
-        K: crate::Key, // Marker trait for approved key types: u8, u16, u32, u64, u128
+        K: Sized + Ord,
         V: serde::Serialize,
-        S: std::fmt::Display,
     { ... }
 }
-```
-
-The `Dataset` (exclusive file handle) contains a `dictionaries: BTreeMap` field which is parsed from the manifest when
-the file is first opened via `Dataset::open` or `Dataset::new`. Note that a platform-agnostic `BTreeMap` is used to
-ensure determinism; the order of elements within the map does not necessarily represent the physical order on disk.
-
-```text
-user types → dictionary type → schema segment + [data segments]
 ```
 
 The `Dataset::dictionary` function is used to create and retrieve named dictionaries wrapped in an asyncronous `RwLock`.
@@ -285,23 +281,79 @@ can choose to `await` mutable or immutable access.
 
 ##### 4.1 Dictionary Schema
 
-The dictionary wraps user-defined `K` and `V` types in a parent struct `D { key: K, value: V }` which can then be
-serialized into a schema segment. The schema serializer resolves `D` into a collection of named columnar data buffers.
+A dictionary inherently requires two opposing access patterns:
+
+1. **Keys** optimised for search performance → columnar
+2. **Values** optimised for extraction and reconstruction → row-oriented
+
+The dictionary is built using standard schema and data segments. The user-defined `K` and `V` types are wrapped in a
+parent struct `D { key: K, value: [V] }` which is then serialized into a schema segment. Values are wrapped in a
+collection type such as `Vec` to enable contiguous row-orientated storage.
 
 ```text
-Schema Segment
-├─ Header
-│  ├─ variant: u8
-│  └─ length: u64
-└─ Payload
-   ├─ key: K → buffer 0: [K]
-   └─ value: V → buffers 1..N
+user types → dictionary type → schema segment + [data segments]
 ```
 
-##### 4.1 Dictionary Entries
+Dictionaries are append-only and grow via additional data segments. The `Dictionary` struct therefore acts as an in
+memory accumulator plus additional `get` functionality. A `values` blob stores each `value: V` contiguously. An
+`offsets` buffer identifies the region for each value that is then deserialized using to the schema downstream of `V`.
+
+```text
+[keys] [offsets] [ values [value 0 [field 0] ... [field N] ] ... [value N] ]
+```
+
+##### 4.2 Dictionary Entries
 
 Entries are stored via ordinary data segments referencing the dictionary schema. Each data segment row represents a
 single key-value pair.
+
+```rust
+impl<K, V> Dictionary<K, V> { pub fn push(&mut self, key: K, value: V) -> Result<K, Error> { ... } }
+```
+
+Users can `push` new entries to the internal `pending: Vec<V>` field which is written to disk as an ordinary data
+segment on `drop`. The dictionary ensures key uniqueness by returning an error from `push` if the specified key is
+already present. The `K: Ord` trait bound enables the manifest to store key statistics such as `min` and `max` which
+improve search performance across multiple data segments. Additional manifest column statistics – and corresponding
+trait bounds – may be added in future versions.
+
+Value retrieval follows a four-step process:
+
+1. Search for the specified key (on disk and pending).
+2. Get the corresponding offsets.
+3. Read the identified region from `values` blob.
+4. Deserialize into a `V` instance.
+
+##### 4.3 Index Dictionaries
+
+A specialised `Index` dictionary implementation is provided for entries keyed by insertion order. The key is
+automatically incremented for each `push` call; creating a new index initialises the key at zero, whereas opening an
+existing index eagerly reads the max existing key from the manifest. An index is recommended for dense ordered data
+where position is the only required identifier.
+
+```text
+push(value 0) → key 0
+push(value 1) → key 1
+push(value 2) → key 2
+```
+
+The `push` function is simplified compared to a generic dictionary and returns the inserted key without `Result` as the
+index prevents key collision. Implementers can specify the key numeric type based on the number of expected elements.
+
+```rust
+impl<K, V> Index<K, V>
+where
+    K: crate::IndexKey, // Marker trait for approved key types: u8, u16, u32, u64, u128
+    V: serde::Serialize,
+{
+    pub fn push(&mut self, value: V) -> K { ... }
+}
+```
+
+The `Index` is implemented as a standard dictionary with one notable optimisation: the on disk `keys` column is ommitted
+as values are searched by index. The manifest stores `count` for each data segment which enables direct access via index
+arithmetic; if data segment 0 contains `100` values and data segment 1 contains a further `45` values, entry number
+`110` is located at index `10` in data segment 0.
 
 ---
 
