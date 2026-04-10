@@ -416,6 +416,8 @@ Implementers can use the optional free-form `metadata.toml` to attach file-level
 - Provenance
 
 If a metadata section is included in the file, a corresponding `length` and `offset` are described in the `manifest`.
+The core library includes a read and write surface, but implementers must include their own metadata parsing and
+validation logic.
 
 ### 6. Lifecycle
 
