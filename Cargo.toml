@@ -6,9 +6,23 @@ description = "Domain-agnostic high-throughput storage for n-dimensional analyti
 license = "BSD-3-Clause"
 authors = ["Amelia Fraser-Dale"]
 
+# See a full list of keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 [dependencies]
 smol = "2.0"
 serde = "1.0"
 memmap2 = "0.9"
 ciborium = "0.2"
-log = "0.4"
+
+[dependencies.log]
+version = "0.4"
+optional = true
+
+[dependencies.toml]
+version = "1.1"
+optional = true
+
+[features]
+default = []
+metadata = ["dep:toml"]
+log = ["dep:log"]
