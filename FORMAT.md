@@ -563,12 +563,16 @@ Let `m` denote the combined byte length of the existing manifest and metadata (i
 length of the incoming segment. The write cycle exploits the relationship between `s` and `m` to guarantee that the
 previous manifest is never overwritten before the new manifest pointer is committed to the file header.
 
-Appending a new segment to the file – regardless of type – requires four steps:
+Appending a new segment to the file – regardless of type – requires four phases:
 
-**Phase 1:*** Write the new manifest at EOF.
 
-The exiting manifest is read into memory and updated to include the incoming segment. The new manifest and metadata (if
-present) are written to a postition relative to `tail` depending on `s` and `m`:
+The `Dataset` contains a `manifest: RwLock<Manifest>` field which is lazily initialised from disk on first access by:
+
+1. Reading the file header to determine manifest `offset` and `length`.
+2. Deserializing the on disk CBOR manifest into an in memory `Manifest` instance.
+
+The exiting in memory manifest is updated to include the incoming segment. The new manifest and metadata (if present)
+are written to a postition relative to `tail` depending on `s` and `m`:
 
 - `s > m` → The new segment is larger than the combined existing manifest and metadata. The new manifest is written
   starting `s` bytes after `tail` to reserve the exact disk space required by the incomming segment. This introduces a
