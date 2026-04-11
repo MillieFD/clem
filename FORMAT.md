@@ -948,18 +948,16 @@ can therefore benefit from segment pruning prior to cross-schema file IO.
 
 ##### 7.6 Filter Summary
 
-| Method                   | Segment pruning | Row-level filter | Notes                                   |
-|--------------------------|-----------------|------------------|-----------------------------------------|
-| `.select([cols])`        | ✓ (column IO)   | —                | Skips unselected buffer reads entirely. |
-| `.range(col, lo..=hi)`   | ✓ (`min`/`max`) | ✓                | Core predicate; composable.             |
-| `.range_from(col, lo..)` | ✓ (`min`)       | ✓                |                                         |
-| `.range_to(col, ..=hi)`  | ✓ (`max`)       | ✓                |                                         |
-| `.eq(col, val)`          | ✓ (`min`/`max`) | ✓                | Equivalent to `range(col, val..=val)`.  |
-| `.is_some(col)`          | —               | ✓                | Requires bitmap read.                   |
-| `.is_none(col)`          | —               | ✓                | Requires bitmap read.                   |
-| `.one_of(col, set)`      | ✓ (`min`/`max`) | ✓                | Prunes when set is disjoint from range. |
-| `.none_of(col, set)`     | —               | ✓                |                                         |
-| `.mask(col)`             | —               | ✓                | Cross-column boolean filter.            |
-| `.limit(n)`              | ✓ (`count`)     | ✓                | Stops iteration once `n` rows yielded.  |
-| `.offset(n)`             | ✓ (`count`)     | ✓                | Skips segments wholly before offset.    |
-| `.stride(n)`             | —               | ✓                | Decimation; no segment-level skip.      |
+| Method                  | Segment pruning | Row-level filter | Notes                                   |
+|-------------------------|-----------------|------------------|-----------------------------------------|
+| `.select([cols])`       | ✓ column IO     | —                | Skips unselected buffer reads entirely. |
+| `.range(col, lo..hi)`   | ✓ `min` `max`   | ✓                | Core predicate; composable.             |
+| `.eq(col, val)`         | ✓ `min` `max`   | ✓                | Equivalent to `range(col, val..=val)`.  |
+| `.is_some(col)`         | —               | ✓                | Requires bitmap read.                   |
+| `.is_none(col)`         | —               | ✓                | Requires bitmap read.                   |
+| `.one_of(col, set)`     | ✓ `min` `max`   | ✓                | Prunes when set is disjoint from range. |
+| `.none_of(col, set)`    | —               | ✓                |                                         |
+| `.mask(col)`            | —               | ✓                | Cross-column boolean filter.            |
+| `.limit(n)`             | ✓ `count`       | ✓                | Stops iteration once `n` rows yielded.  |
+| `.offset(n)`            | ✓ `count`       | ✓                | Skips segments wholly before offset.    |
+| `.stride(n)`            | —               | ✓                | Decimation; no segment-level skip.      |
