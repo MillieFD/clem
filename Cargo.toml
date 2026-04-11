@@ -5,6 +5,7 @@ edition = "2024"
 description = "Domain-agnostic high-throughput storage for n-dimensional analytical data, written in Rust."
 license = "BSD-3-Clause"
 authors = ["Amelia Fraser-Dale"]
+repository = "https://github.com/MillieFD/clem"
 
 # See a full list of keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
