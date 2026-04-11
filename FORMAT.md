@@ -261,6 +261,8 @@ All columns contain an equal number of rows indicated by `count` in the segment 
 is informed by each column type described in the schema. Where the schema indicates optional values, the buffer payload
 is preceded by a packed nullable bitmap.
 
+---
+
 ### 4 Dictionaries
 
 The storage cost for large types with repetitive values can be amortised using a dictionary, which is implemented as
@@ -436,6 +438,8 @@ The file manifest provides an optimised read path for random access; however, ma
 crash during the write cycle. As each segment is self-describing, a sequential reader can rebuild the manifest from
 scratch. This behaviour is triggered automatically during `Dataset::open` if manifest corruption is detected, or users
 can call `Manifest::rebuild` explicitly.
+
+---
 
 ### 6. Lifecycle
 
