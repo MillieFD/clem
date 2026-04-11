@@ -20,7 +20,7 @@ benefit from a minimal high-performance core library which can be further enhanc
 - **Parallel:** First-class support for multiple-producer multiple-consumer workflows.
 - **Performant:** Zero-copy random access reads via `mmap`.
 
-To achieve these design goals, `clem` must decouple **logical structure** (types, schemas) from **physical storage**
+To achieve these design goals, `clem` must decouple **logical structure** (types and schemas) from **physical storage**
 (segments). This document describes the format design and shows how each goal is met.
 
 ---
@@ -32,7 +32,7 @@ To achieve these design goals, `clem` must decouple **logical structure** (types
 Data is stored in **columnar buffers** to optimise:
 
 - Compression
-- SIMD/vectorised access
+- SIMD vectorised access
 - Predicate filtering
 
 ##### 2.2 Segmented Layout
@@ -53,15 +53,15 @@ Whole-segment deletion is permitted but expensive; all downstream segments are m
 `usize` are deliberately omitted to ensure file portability. Additional user-defined types are embedded directly in
 the schema using a depth-first cursor-based stateful serializer with no per-field allocation on the hot path.
 
-- Leaf nodes map to contiguous columnar data buffers via index.
-- Internal nodes exist purely for navigation & reconstruction.
+- **Leaf nodes** map to contiguous columnar data buffers via index.
+- **Internal nodes** exist purely for navigation & reconstruction.
 
 ```text
 tree schema → array nodes → buffers
 ```
 
 For example `struct Outer { foo: Inner, bar: i32 }` and `struct Inner { baz: bool, quux: Option<f64> }` can be encoded
-as just three contiguous data buffers and one null bitmap arranged sequentially:
+as just three contiguous data buffers and one packed null bitmap arranged sequentially:
 
 ```text
 Outer
@@ -95,7 +95,7 @@ unsized types into:
 1. Columnar metadata describing boundaries
 2. A contiguous region of elements
 
-This design ensures O(1) random access and avoids per-element pointer chasing. Sequential scans across the contained
+This design ensures **O(1) random access** and avoids per-element pointer chasing. Sequential scans across the contained
 elements `[T]` remains linear; leveraging columnar optimisations for SIMD and prefetch.
 
 ```text
@@ -105,8 +105,8 @@ values:  [a, b, c, d, e, f, g, h]
 
 The serialized on disk example (above) is deserialized into the memory representation (below). Implementers must specify
 which type to use for offset storage based on the number of expected elements. A `NonZeroUnsigned` marker trait is
-implemented for approved types: NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128. The `offsets` buffer can
-simultaneously encode nullability by leveraging niche-optimisation on non-zero types.
+implemented for approved types. The `offsets` buffer can simultaneously encode nullability by leveraging
+niche-optimisation on non-zero types.
 
 ```text
 Row 0 → values[..3] → "abc"
@@ -115,7 +115,7 @@ Row 2 → values[6..6] → "" (empty)
 Row 3 → values[6..] → "gh"
 ```
 
-Nested unsized types serialize into a flattened tree with multiple offset layers. The compositional design preserves
+Nested unsized types serialize into a flattened tree with **multiple offset layers**. This composable design preserves
 the performance advantages associated with contiguous value storage; namely predictable vectorised traversal. Scanning
 performance across the contiguous inner `values` buffer is unaffected by deep nesting. The inner offsets buffer is
 aligned in memory order of traversal to improve cache locality during nested iteration and reduce TLB misses.
@@ -152,13 +152,13 @@ field (`bitmap` if present, otherwise `payload`).
 
 **Unaligned fields**
 
-| Field                              | Reason                                                            |
-|------------------------------------|-------------------------------------------------------------------|
-| Segment Header `variant`           | Read once per segment during discovery; never vectorised.         |
-| Segment Header `schema` & `length` | Fixed-width `u64` copied into owned values during header parsing. |
-| File Header `version` and `magic`  | Read once when file opened; zero benefit from alignment.          |
-| Schema Segment payload             | Deserialised into owned type tree; not accessed on the hot path.  |
-| Manifest (CBOR)                    | Variable-length text formats deserialised into owned structures.  |
+| Field                                | Reason                                                                   |
+|--------------------------------------|--------------------------------------------------------------------------|
+| Segment Header `variant`             | Read once per segment during discovery; never vectorised.                |
+| Segment Header `schema` and `length` | Fixed-width `NonZeroU64` copied into owned values during header parsing. |
+| File Header `version` and `magic`    | Read once when file opened; zero benefit from alignment.                 |
+| Schema Segment payload               | Deserialised into owned type tree; not accessed on the hot path.         |
+| Manifest (CBOR)                      | Variable-length text formats deserialised into owned structures.         |
 
 Byte order is little-endian throughout.
 
@@ -169,9 +169,8 @@ On disk data is read lazily, being represented via a minimal `Sector` struct pri
 - **Fast random access:** Readers `seek` directly to the pertinent file region.
 - **Memory efficient:** Readers `take` exactly the required number of bytes instead of loading the entire file.
 
-Passing a small `Sector` instance can reduce overhead compared to passing an in-memory data buffer. Alternative read
-functions that return the underlying `Sector` without file IO are provided so that implementers can work directly with
-on disk storage regions.
+Passing small `Sector` instances can reduce overhead compared to passing owned data buffers. Alternative zero-copy read
+functions that return `Mmap` are provided so that implementers can work directly with on disk storage regions.
 
 ```rust
 /// A contiguous byte range within the file.
@@ -189,10 +188,10 @@ pub struct Sector {
 1. `Ord` and `PartialOrd` compare offsets. One sector is considered `less` than another which starts closer to EOF.
 2. `Eq` and `PartialEq` compare offsets and lengths. Two sectors are considered `equal` only if they start at the same
    offset and extend for the same length i.e. represent identical data.
-3. `IntoIterator` allows implementers to stream bytes from the file.
+3. `Stream` allows implementers to stream bytes asynchronously from the file.
 
-Sectors enforce the immutability of underlying on disk data. Implementers are advised to `read` data into an owned
-in-memory collection when mutability is required e.g. downstream data processing.
+Sectors enforce the immutability of underlying on disk data. Implementers are advised to `collect` data into an owned
+type when mutability is required e.g. for downstream data processing.
 
 ---
 
@@ -524,7 +523,7 @@ Type and field names are not considered; matching is purely structural to grant 
 
 The file header begins with a magic byte sequence used to identify the file type. Implementers must reject incorrect
 magic byte sequences. Implementers may prepend their own file header – e.g. to indicate a specific file type built atop
-clem with a canonical schema – but must remove the prepended data before passing to the underlying `clem` reader.
+`clem` with a canonical schema – but must remove the prepended data before passing to the underlying reader.
 
 ```text
 File
