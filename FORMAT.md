@@ -514,6 +514,7 @@ impl Dataset { pub fn substream<T>(&self, schema: String) -> Result<SubStream<T>
 
 Users can define lightweight read-only views without pulling unnecessary columns. The dataset searches the specified
 schema for a structural subset-match (projection) against the `T` type tree, returning an error if no match is found.
+Type and field names are not considered; matching is purely structural to grant users additional flexibility.
 
 ##### 6.3 On Disk File
 
