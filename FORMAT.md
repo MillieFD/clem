@@ -849,7 +849,6 @@ Filters are evaluated in two stages to minimise IO:
 Filters that can be fully satisfied by manifest statistics never cause unnecessary file IO. Filters that require
 individual row values are combined and applied in a single pass across the candidate segments.
 
-##### 7.5 Filter Summary
 ##### 7.5 Cross-Schema Queries
 
 A single `clem` file may contain multiple schemas. A query builder can operate across schemas by joining two query legs
@@ -857,11 +856,97 @@ via a shared **key** column. Dictionaries store entries using ordinary schema an
 surface applies uniformly across named schemas and named dictionaries.
 
 ```rust
-impl Query { pub fn join(&mut self, other: &mut Self) -> Self { ... } }
+impl Query { pub fn join<S: Display>(&mut self, other: &mut Self, left: S, right: S) -> Self { ... } }
 ```
 
 Users can `join` two existing `Query` instances into a single instance. Both legs are independent and therefore support
-the full filter and projection vocabulary.
+the full filter and projection vocabulary. The specified columns are matched by value and must share a compatible type.
+
+**Join:** Retain only rows where the key is present in both legs.
+
+```rust
+let result = dataset
+    .query("readings")
+    .select(["time", "sensor", "value"])
+    .range("value", 10.0..=20.0)
+    .join(
+        dataset.query("sensors").select(["id", "location"]),
+        "sensor", // left key column
+        "id", // right key column
+    )
+    .read()
+    .await?
+```
+
+**Semi-join:** Retain rows from the left leg whose key appears in the right leg, but do not include any right-leg
+columns in the output. Useful for existence filtering without column inflation.
+
+```rust
+.semi_join(
+    dataset.query("active_sensors").eq("online", true),
+    "sensor_id",
+    "sensor_id",
+)
+```
+
+**Anti-join:** The complement of semi-join. Retain rows from the left leg whose key does *not* appear in the right leg,
+but do not include any right-leg columns in the output.
+
+```rust
+.anti_join(
+    dataset.query("faulty_sensors"),
+    "sensor_id",
+    "sensor_id",
+)
+```
+
+**Dictionary Joins**
+
+Dictionaries expose the same `Query` interface as ordinary schemas, meaning dictionary joins are syntactically
+identical. The dictionary **key** column acts as the natural join key. Manifest `min` and `max` statistics on the key
+column are used for segment pruning on the dictionary side.
+
+```rust
+let result = dataset
+    .query("readings")
+    .select(["sensor_id", "value"])
+    .join(
+        dataset.query("sensor_dictionary").select(["id", "label"]),
+        "sensor_id", // left key column
+        "id", // dictionary key column
+    )
+    .read()
+    .await?
+```
+
+**Chaining Joins**
+
+The query builder is deliberately composable. Each `join` returns a new `Query` that can itself be further filtered or
+joined.
+
+```rust
+let result = dataset
+    .query("measurements")
+    .range("time", t0..t1)
+    .join(
+        dataset.query("sensors").eq("online", true),
+        "sensor_id",
+        "sensor_id",
+    )
+    .join(
+        dataset.query("locations_dictionary").select(["id", "region", "timezone"]),
+        "sensor_id",
+        "id",
+    )
+    .select(["time", "value", "region"])
+    .read()
+    .await?
+```
+
+Filters after a join apply to the combined output. Filters before a join apply only to the calling `Query` instance and
+can therefore benefit from segment pruning prior to cross-schema file IO.
+
+##### 7.6 Filter Summary
 
 | Method                   | Segment pruning | Row-level filter | Notes                                   |
 |--------------------------|-----------------|------------------|-----------------------------------------|
