@@ -10,4 +10,5 @@ authors = ["Amelia Fraser-Dale"]
 smol = "2.0"
 serde = "1.0"
 memmap2 = "0.9"
+ciborium = "0.2"
 log = "0.4"
