@@ -850,6 +850,18 @@ Filters that can be fully satisfied by manifest statistics never cause unnecessa
 individual row values are combined and applied in a single pass across the candidate segments.
 
 ##### 7.5 Filter Summary
+##### 7.5 Cross-Schema Queries
+
+A single `clem` file may contain multiple schemas. A query builder can operate across schemas by joining two query legs
+via a shared **key** column. Dictionaries store entries using ordinary schema and data segments, meaning the join
+surface applies uniformly across named schemas and named dictionaries.
+
+```rust
+impl Query { pub fn join(&mut self, other: &mut Self) -> Self { ... } }
+```
+
+Users can `join` two existing `Query` instances into a single instance. Both legs are independent and therefore support
+the full filter and projection vocabulary.
 
 | Method                   | Segment pruning | Row-level filter | Notes                                   |
 |--------------------------|-----------------|------------------|-----------------------------------------|
