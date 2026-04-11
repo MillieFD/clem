@@ -444,28 +444,26 @@ can call `Manifest::rebuild` explicitly.
 1. **In memory** accumulator optimised for high-throughput ingestion.
 2. **On disk** archive optimised for range-based querying across arbitrary dimensions.
 
-##### 6.1 In Memory Accumulator
+##### 6.1 In Memory Accumulation
 
 Data is initially written to an **in memory** accumulator optimised for high-throughput ingestion. The `pub struct 
-Accumulator` is generic over any type `R` that implements `serde::Serialize`. The accumulator implements
-`serde::Serializer` to serialized ingested row-wise data into columnar `Vec` buffers which can be written to disk.
-
-The accumulator includes a number of public functions:
+Stream` is generic over any type `R` that implements `serde::Serialize` and `serde::Deserialize`. The stream implements
+`serde::Serializer` to serialize ingested row-orientated data into columnar buffers which are then written to disk.
 
 ```rust
-impl<R> Accumulator<R>
+impl<R> Stream<R>
 where
-    R: serde::Serialize
+    R: Serialize + Deserialize
 {
-    /// Append a row-wise record to the internal columnar [`Vec`] buffers.
+    /// Append a row-orientated record to the internal columnar [`Vec`] buffers.
     pub fn push(&mut self, record: R) { ... }
 
-    /// Extends the accumulator buffers with the contents of an iterator.
+    /// Extends the stream buffers with the contents of an iterator.
     pub fn extend<I>(&mut self, iterator: I) where I: IntoIterator<Item = R> { ... }
 
     /// Builds a schema segment for type `R` and writes to disk. Returns the written [`Sector`] is successful, which
     /// is also cached to the lazily initialised `schema: Sector` field.
-    pub async fn schema(&self) -> Result<Sector, Error> { ... }
+    pub async fn schema(&mut self) -> Result<Sector, Error> { ... }
 
     /// Writes a new data segment to disk. Returns the written [`Sector`] if successful.
     ///
@@ -481,20 +479,41 @@ where
 ```
 
 Users can explicitly write data to disk using the `write` function. Data is automatically written to disk on `drop` if
-the buffers are not empty, or if `count` reaches `u32::MAX` due to size limitation in the manifest.
+the buffers are not empty, or if `count` reaches `u64::MAX` to prevent counter overflow.
 
-##### 6.2 Parallel Accumulators
+##### 6.2 Parallel Streams
 
-Accumulators are thread-local. Multi-producer workloads build segments independently via separate in memory accumulator
-instances spawned from the same dataset. Users can spawn an arbitrary number of accumulators via `Dataset::accumulator`.
+Streams are thread-local. Multi-producer workloads build segments independently via separate in memory streams spawned
+from the same dataset. Users can spawn an arbitrary number of streams via `Dataset::stream`.
 
 ```rust
-impl Dataset { pub fn accumulator(&self) -> Result<Accumulator, Error> { ... } }
+impl Dataset { pub fn stream<R>(&mut self) -> Result<Stream<R>, Error> { ... } }
 ```
 
-The `Dataset` (exclusive file handle) coordinates access to the underlying file; preventing multiple accumulators from
-writing to disk simultaneously. All interactions with the underlying file and global lock are implemented asynchronously
-via `smol`.
+The `Dataset` (exclusive file handle) coordinates file access; preventing multiple streams from writing to disk
+simultaneously. All interactions with the underlying file and global lock are implemented asynchronously via `smol`.
+
+##### 6.3 Schema Validation
+
+`Dataset::stream` compares the `R` type tree root node name against the manifest `schemas: BTreeMap`; initialising a new
+stream with `schema: R` if no entry exists for the specified name or returning an error if the `R` type tree does not
+exactly match the existing schema structure.
+
+- An exact structural match is required for read and write validity.
+- Subset-matches (projections) are rejected; use `Dataset::substream` instead.
+
+This design ensures schema verification is performed exactly once. Stream read and write operations can then proceed
+fearlessly without per-request runtime checks on the hot path. Cloning an existing `Stream<R>` bypasses schema
+validation. Multi-consumer workloads should therefore prefer cloning a validated stream instead of calling
+`Dataset::table` repeatedly. Implementers are encouraged to export canonical types for convenience, removing the need
+for users to reconstruct schema types manually.
+
+```rust
+impl Dataset { pub fn substream<T>(&self, schema: String) -> Result<SubStream<T>, Error> { ... } }
+```
+
+Users can define lightweight read-only views without pulling unnecessary columns. The dataset searches the specified
+schema for a structural subset-match (projection) against the `T` type tree, returning an error if no match is found.
 
 ##### 6.3 On Disk File
 
@@ -601,3 +620,8 @@ cycle is complete with `manifest.offset <= tail` and the manifest correctly inde
 [Header] [Segment 0] ... [New Segment] ... [New Manifest] [New Metadata]
                                  tail ↑   ↑ offset
 ```
+
+##### 6.5 Deserialization Type Safety
+
+##### 6.6 Reading
+
