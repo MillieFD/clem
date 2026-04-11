@@ -254,7 +254,7 @@ indicate columns which are excluded to improve space efficiency if:
 
 1. Buffer type is `Option<T>` and contains all `None` values.
 2. Buffer type is `bool` and contains all `false` values.
-3. Buffer type is an intager and contains all `zero` values.
+3. Buffer type is an integer and contains all `zero` values.
 
 All columns contain an equal number of rows indicated by `count` in the segment header. Buffer payload deserialization
 is informed by each column type described in the schema. Where the schema indicates optional values, the buffer payload
