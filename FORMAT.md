@@ -18,7 +18,7 @@ benefit from a minimal high-performance core library which can be further enhanc
 - **Efficient:** Suitable for edge deployment on resource-constrained hardware.
 - **Flexible:** Can be adapted to suit a wide variety of applications.
 - **Parallel:** First-class support for multiple-producer multiple-consumer workflows.
-- **Performant:** Zero-copy random access reads via `mmap`.
+- **Performant:** Efficient random access reads.
 
 To achieve these design goals, `clem` must decouple **logical structure** (types and schemas) from **physical storage**
 (segments). This document describes the format design and shows how each goal is met.
@@ -44,7 +44,7 @@ The file is divided into **self-describing segments** to enable:
 - Crash resilience
 - Manifest reconstruction
 
-`clem` is optimised for append-heavy workflows and in situ query reads via `mmap`. Segments are immutable once written.
+`clem` is optimised for append-heavy workflows and range-based query reads. Segments are immutable once written.
 Whole-segment deletion is permitted but expensive; all downstream segments are moved and the `manifest` is updated.
 
 ##### 2.3 Arbitrary Types
@@ -134,7 +134,7 @@ values
 - Memory mapped IO safety
 - Cache-line efficiency
 
-Padding is inserted immediately before fields that are accessed directly via `mmap` or processed by SIMD instructions.
+Padding is inserted immediately before fields that require aligned access or are processed by SIMD instructions.
 Alignment is not enforced for small or non-performance-critical fields to minimise file size.
 
 **Aligned fields**
@@ -143,7 +143,7 @@ Alignment is not enforced for small or non-performance-critical fields to minimi
 |------------------------|---------------------------------------------------------------------------------|
 | Buffer `payload`       | Primary SIMD target; misalignment silently degrades vectorised reads or faults. |
 | Buffer `bitmap`        | Iterated alongside payload; must be cache-line paired with the payload.         |
-| Data Segment `offsets` | Cast directly from `mmap`; misalignment is undefined behaviour.                 |
+| Data Segment `offsets` | Cast directly from a memory-mapped region; misalignment is undefined behaviour.    |
 | Unsized Type `offsets` | Read directly during boundary lookup; 64-bit alignment improves access safety.  |
 | Unsized Type `values`  | Contiguous hot-path payload; 64-bit alignment benefits traversal efficiency.    |
 
@@ -164,33 +164,31 @@ Byte order is little-endian throughout.
 
 ##### 2.6 Lazy Partial Reads
 
-On disk data is read lazily, being represented via a minimal `Sector` struct prior to file IO. This design ensures:
+On disk data is read lazily, being represented via a minimal `Segment` struct prior to file IO. This design ensures:
 
 - **Fast random access:** Readers `seek` directly to the pertinent file region.
 - **Memory efficient:** Readers `take` exactly the required number of bytes instead of loading the entire file.
 
-Passing small `Sector` instances can reduce overhead compared to passing owned data buffers. Alternative zero-copy read
-functions that return `Mmap` are provided so that implementers can work directly with on disk storage regions.
+Passing small `Segment` instances can reduce overhead compared to passing owned data buffers.
 
 ```rust
 /// A contiguous byte range within the file.
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
-pub struct Sector {
-    /// Byte offset to the start of the segment.
+pub struct Segment {
+    /// Byte offset to the start of the region.
     offset: SeekFrom,
     /// Length in bytes.
     length: usize,
 }
 ```
 
-`Sector` implements several traits for convenience:
+`Segment` implements several traits for convenience:
 
-1. `Ord` and `PartialOrd` compare offsets. One sector is considered `less` than another which starts closer to EOF.
-2. `Eq` and `PartialEq` compare offsets and lengths. Two sectors are considered `equal` only if they start at the same
+1. `Ord` and `PartialOrd` compare offsets. One segment is considered `less` than another which starts closer to EOF.
+2. `Eq` and `PartialEq` compare offsets and lengths. Two segments are considered `equal` only if they start at the same
    offset and extend for the same length i.e. represent identical data.
-3. `Stream` allows implementers to stream bytes asynchronously from the file.
 
-Sectors enforce the immutability of underlying on disk data. Implementers are advised to `collect` data into an owned
+Segments enforce the immutability of underlying on disk data. Implementers are advised to `collect` data into an owned
 type when mutability is required e.g. for downstream data processing.
 
 ---
@@ -390,11 +388,11 @@ Manifest
 ├─ dictionaries: BTreeMap (optional)
 └─ schemas: BTreeMap
    ├─ <schema-name>
-   │  ├─ sector: Sector
+   │  ├─ segment: Segment
    │  └─ columns: BTreeMap
    │     ├─ <column-name>
    │     │  └─ buffers: [Buffer]
-   │     │     ├─ sector: Sector
+   │     │     ├─ segment: Segment
    │     │     ├─ count: NonZeroU32
    │     │     ├─ min: T
    │     │     └─ max: T
@@ -417,7 +415,7 @@ Column lookup by name returns the corresponding collection of buffers across all
 manifest["schema_name"]["column_name"] → [Buffer]
 ```
 
-Each `Buffer` contains a `sector: Sector` alongside data statistics such as `min` and `max` for predicate pruning.
+Each `Buffer` contains a `segment: Segment` alongside data statistics such as `min` and `max` for predicate pruning.
 
 ##### 5.1 Metadata
 
@@ -464,17 +462,17 @@ where
     /// Extends the stream buffers with the contents of an iterator.
     pub fn extend<I>(&mut self, iterator: I) where I: IntoIterator<Item = R> { ... }
 
-    /// Builds a schema segment for type `R` and writes to disk. Returns the written [`Sector`] is successful, which
-    /// is also cached to the lazily initialised `schema: Sector` field.
-    pub async fn schema(&mut self) -> Result<Sector, Error> { ... }
+    /// Builds a schema segment for type `R` and writes to disk. Returns the written [`Segment`] if successful, which
+    /// is also cached to the lazily initialised `schema: Segment` field.
+    pub async fn schema(&mut self) -> Result<Segment, Error> { ... }
 
-    /// Writes a new data segment to disk. Returns the written [`Sector`] if successful.
+    /// Writes a new data segment to disk. Returns the written [`Segment`] if successful.
     ///
     /// The internal columnar buffers are consumed and reinitialised with [`Vec::new`] ready for further data ingestion.
     ///
-    /// [`Write`] uses the lazily initialised `schema: Sector` field which calls [`Self::schema`] on first access,
+    /// [`Write`] uses the lazily initialised `schema: Segment` field which calls [`Self::schema`] on first access,
     /// hence ensuring that a schema segment is always written to disk before any dependent data segments.
-    pub async fn write(&mut self) -> Result<Sector, Error> { ... }
+    pub async fn write(&mut self) -> Result<Segment, Error> { ... }
 
     /// Reinitialise the columnar data buffers without writing data to disk. All accumulated data is permanently lost.
     pub fn discard(&mut self) { ... }
@@ -494,7 +492,7 @@ impl Dataset { pub fn stream<R>(&mut self) -> Result<Stream<R>, Error> { ... } }
 ```
 
 The `Dataset` (exclusive file handle) coordinates file access; preventing multiple streams from writing to disk
-simultaneously. All interactions with the underlying file and global lock are implemented asynchronously via `smol`.
+simultaneously. All interactions with the underlying file and global lock are implemented asynchronously.
 
 ##### 6.3 Schema Validation
 
@@ -656,7 +654,7 @@ a shared read guard and return the manifest immediately without any file IO.
 The manifest exposes high-level statistics for each column involved in the predicate:
 
 ```text
-manifest["schema_name"]["column_name"] → [Buffer { sector, count, min, max }]
+manifest["schema_name"]["column_name"] → [Buffer { segment, count, min, max }]
 ```
 
 The reader can use these statistics to eliminate segments where the query predicate is provably unsatisfiable.
@@ -668,9 +666,9 @@ query.max < buffer.min  →  All values in segment are above the query range
 
 After pruning, the shared manifest read guard is released and the retained segments are passed to phase three.
 
-**Phase 3: Lazy Async Zero-Copy Batched Reads**
+**Phase 3: Lazy Async Batched Reads**
 
-Candidate segments are packaged into a lazy async zero-copy reader that chains across sectors, presenting a flattened
+Candidate segments are packaged into a lazy async batched reader that chains across segments, presenting a flattened
 stream of deserialized rows to the caller. Internally, the reader is batched to reduce syscall overhead; returning one
 row each time `next` is called and only executing batched file IO when the internal buffer is exhausted.
 
@@ -811,7 +809,7 @@ Sample every nth row from the result set. Useful for decimation and preview read
 
 ##### 7.3 Execution and Output
 
-`.read().await` executes the query and returns a lazy async zero-copy batched reader. Each call to `.next().await`
+`.read().await` executes the query and returns a lazy async batched reader. Each call to `.next().await`
 yields one deserialized row; no row is deserialized before being requested. The reader chains across segments
 transparently, meaning callers observe a flat sequence regardless of the underlying segment structure.
 
