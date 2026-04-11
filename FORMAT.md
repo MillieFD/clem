@@ -236,7 +236,8 @@ Data Segment
 │  ├─ variant: u8
 │  ├─ schema: NonZeroU64
 │  ├─ length: NonZeroU64
-│  └─ offsets: [NonZeroU64]
+│  ├─ count: NonZeroU64
+│  └─ offsets: [Option<NonZeroU64>]
 ├─ Buffer 0
 │  ├─ length: NonZeroU64
 │  └─ payload: [u8]
@@ -248,10 +249,17 @@ Data Segment
 └─ Buffer N
 ```
 
-The schema maps each leaf node to a contiguous data buffer. The offset of each buffer is read from the `offsets` array
-using the column index. All columns must have an equal number of rows. Buffer payload deserialization is informed by the
-column type described by the schema. Where the schema indicates optional values, the buffer payload is preceded by a
-packed nullable bitmap.
+The schema maps each leaf node to a contiguous data buffer where `offsets[i]...offsets[i+1]` describes the region
+occupied by buffer `i`. The `offsets` buffer simultaneously acts as a null bitmap by leveraging niche-optimisation to
+indicate columns which are excluded to improve space efficiency if:
+
+1. Buffer type is `Option<T>` and contains all `None` values.
+2. Buffer type is `bool` and contains all `false` values.
+3. Buffer type is an intager and contains all `zero` values.
+
+All columns contain an equal number of rows indicated by `count` in the segment header. Buffer payload deserialization
+is informed by each column type described in the schema. Where the schema indicates optional values, the buffer payload
+is preceded by a packed nullable bitmap.
 
 ### 4 Dictionaries
 
