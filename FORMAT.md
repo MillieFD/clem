@@ -422,6 +422,13 @@ If a metadata section is included in the file, a corresponding `length` and `off
 The core library includes a read and write surface, but implementers must include their own metadata parsing and
 validation logic.
 
+##### 5.2 Manifest Rebuild
+
+The file manifest provides an optimised read path for random access; however, manifest corruption can occur following a
+crash during the write cycle. As each segment is self-describing, a sequential reader can rebuild the manifest from
+scratch. This behaviour is triggered automatically during `Dataset::open` if manifest corruption is detected, or users
+can call `Manifest::rebuild` explicitly.
+
 ### 6. Lifecycle
 
 `clem` maximises read and write performance by separating the data lifecycle into two phases:
