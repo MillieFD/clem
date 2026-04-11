@@ -944,7 +944,13 @@ let result = dataset
 ```
 
 Filters after a join apply to the combined output. Filters before a join apply only to the calling `Query` instance and
-can therefore benefit from segment pruning prior to cross-schema file IO.
+can therefore benefit from segment pruning prior to cross-schema file IO. The join strategy is selected automatically
+based on `count` statistics:
+
+| Size                     | Strategy                        |
+|--------------------------|---------------------------------|
+| Right leg fits in memory | Hash join                       |
+| Both legs are large      | Disk-based external sort joins  |
 
 ##### 7.6 Filter Summary
 
