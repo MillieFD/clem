@@ -182,7 +182,7 @@ pub struct Sector {
 
 `Sector` implements several traits for convenience:
 
-1. `Ord` and `PartialOrd` compare offsets. One sector is considered `less` than another which starts closer to EOF.
+1. `Ord` and `PartialOrd` compare offsets; a sector closer to EOF compares "greater than" one earlier in the file.
 2. `Eq` and `PartialEq` compare offsets and lengths. Two sectors are considered `equal` only if they start at the same
    offset and extend for the same length i.e. represent identical data.
 
