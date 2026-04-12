@@ -8,8 +8,8 @@ Domain-agnostic high-throughput storage for n-dimensional analytical data, writt
 
 `clem` maximises read and write performance by separating the data lifecycle into two phases:
 
-1. **In memory** accumulator optimised for high-throughput ingestion.
-2. **On disk** archive optimised for range-based querying across arbitrary dimensions.
+1. **In-memory** accumulator optimised for high-throughput ingestion.
+2. **On-disk** archive optimised for range-based querying across arbitrary dimensions.
 
 `clem` provides an extensible backend which can be adapted to suit a variety of scientific applications. Implementers
 benefit from a minimal high-performance core library which can be further enhanced via domain-specific optimisations.
@@ -103,7 +103,7 @@ offsets: [3, 6, 6]
 values:  [a, b, c, d, e, f, g, h]
 ```
 
-The serialized on disk example (above) is deserialized into the memory representation (below). Implementers must specify
+The serialized on-disk example (above) is deserialized into the memory representation (below). Implementers must specify
 which type to use for offset storage based on the number of expected elements. A `NonZeroUnsigned` marker trait is
 implemented for approved types. The `offsets` buffer can simultaneously encode nullability by leveraging
 niche-optimisation on non-zero types.
@@ -164,13 +164,10 @@ Byte order is little-endian throughout.
 
 ##### 2.6 Lazy Partial Reads
 
-On disk data is read lazily, being represented via a minimal `Sector` struct prior to file IO. This design ensures:
+On-disk data is represented via a minimal `Sector` struct prior to file IO. This design ensures:
 
 - **Fast random access:** Readers `seek` directly to the pertinent file region.
 - **Memory efficient:** Readers `take` exactly the required number of bytes instead of loading the entire file.
-
-Passing small `Sector` instances can reduce overhead compared to passing owned data buffers. Alternative zero-copy read
-functions that return `Mmap` are provided so that implementers can work directly with on disk storage regions.
 
 ```rust
 /// A contiguous byte range within the file.
@@ -188,10 +185,10 @@ pub struct Sector {
 1. `Ord` and `PartialOrd` compare offsets. One sector is considered `less` than another which starts closer to EOF.
 2. `Eq` and `PartialEq` compare offsets and lengths. Two sectors are considered `equal` only if they start at the same
    offset and extend for the same length i.e. represent identical data.
-3. `Stream` allows implementers to stream bytes asynchronously from the file.
 
-Sectors enforce the immutability of underlying on disk data. Implementers are advised to `collect` data into an owned
-type when mutability is required e.g. for downstream data processing.
+Passing a small `Sector` instance can reduce overhead compared to passing an owned data buffer. Sectors enforce the
+immutability of underlying on-disk data; implementers must `copy` into an owned type when mutability is required e.g.
+for downstream data processing.
 
 ---
 
@@ -270,7 +267,7 @@ user-friendly abstraction over the underlying schema and data segments coordinat
 The `Dataset` (exclusive file handle) contains a `dictionaries: BTreeMap` field which is parsed from the manifest when
 the file is first opened via `Dataset::open` or `Dataset::new`. The `BTreeMap` is used to look up dictionaries by name.
 Note that a platform-agnostic `BTreeMap` is used to ensure determinism; the order of elements within the map does not
-necessarily represent the physical order on disk.
+necessarily represent the physical on-disk order.
 
 ```rust
 impl Dataset {
@@ -333,7 +330,7 @@ trait bounds – may be added in future versions.
 
 Value retrieval follows a four-step process:
 
-1. Search for the specified key (on disk and pending).
+1. Search for the specified key (on-disk and pending).
 2. Get the corresponding offsets.
 3. Read the identified region from `values` blob.
 4. Deserialize into a `V` instance.
@@ -364,7 +361,7 @@ where
 }
 ```
 
-The `Index` is implemented as a standard dictionary with one notable optimisation: the on disk `keys` column is omitted
+The `Index` is implemented as a standard dictionary with one notable optimisation: the on-disk `keys` column is omitted
 as values are searched by index. The manifest stores `count` for each data segment which enables direct access via index
 arithmetic; if data segment 0 contains `100` values and data segment 1 contains a further `45` values, entry number
 `110` is located at index `10` in data segment 0.
@@ -411,7 +408,7 @@ Schema>` sorted in lexicographic order is used to ensure a fully deterministic l
 manifest["schema_name"] → Schema { segment: Segment, columns: BTreeMap<String, Column> }
 ```
 
-Column lookup by name returns the corresponding collection of buffers across all on disk data segments.
+Column lookup by name returns the corresponding collection of buffers across all on-disk data segments.
 
 ```text
 manifest["schema_name"]["column_name"] → [Buffer]
@@ -444,12 +441,12 @@ can call `Manifest::rebuild` explicitly.
 
 `clem` maximises read and write performance by separating the data lifecycle into two phases:
 
-1. **In memory** accumulator optimised for high-throughput ingestion.
-2. **On disk** archive optimised for range-based querying across arbitrary dimensions.
+1. **In-memory** accumulator optimised for high-throughput ingestion.
+2. **In-disk** archive optimised for range-based querying across arbitrary dimensions.
 
-##### 6.1 In Memory Accumulation
+##### 6.1 in-memory Accumulation
 
-Data is initially written to an **in memory** accumulator optimised for high-throughput ingestion. The `pub struct 
+Data is initially written to an **in-memory** accumulator optimised for high-throughput ingestion. The `pub struct 
 Stream` is generic over any type `R` that implements `serde::Serialize` and `serde::Deserialize`. The stream implements
 `serde::Serializer` to serialize ingested row-orientated data into columnar buffers which are then written to disk.
 
@@ -486,7 +483,7 @@ the buffers are not empty, or if `count` reaches `u64::MAX` to prevent counter o
 
 ##### 6.2 Parallel Streams
 
-Streams are thread-local. Multi-producer workloads build segments independently via separate in memory streams spawned
+Streams are thread-local. Multi-producer workloads build segments independently via separate in-memory streams spawned
 from the same dataset. Users can spawn an arbitrary number of streams via `Dataset::stream`.
 
 ```rust
@@ -519,7 +516,7 @@ Users can define lightweight read-only views without pulling unnecessary columns
 schema for a structural subset-match (projection) against the `T` type tree, returning an error if no match is found.
 Type and field names are not considered; matching is purely structural to grant users additional flexibility.
 
-##### 6.3 On Disk File
+##### 6.3 On-Disk File
 
 The file header begins with a magic byte sequence used to identify the file type. Implementers must reject incorrect
 magic byte sequences. Implementers may prepend their own file header – e.g. to indicate a specific file type built atop
@@ -569,9 +566,9 @@ Appending a new segment to the file – regardless of type – requires four pha
 The `Dataset` contains a `manifest: RwLock<Manifest>` field which is lazily initialised from disk on first access by:
 
 1. Reading the file header to determine manifest `offset` and `length`.
-2. Deserializing the on disk CBOR manifest into an in memory `Manifest` instance.
+2. Deserializing the on-disk CBOR manifest into an in-memory `Manifest` instance.
 
-The exiting in memory manifest is updated to include the incoming segment. The new manifest and metadata (if present)
+The exiting in-memory manifest is updated to include the incoming segment. The new manifest and metadata (if present)
 are written to a postition relative to `tail` depending on `s` and `m`:
 
 - `s > m` → The new segment is larger than the combined existing manifest and metadata. The new manifest is written
@@ -645,10 +642,10 @@ Reading data from the file – across an arbitrary number of segments – requir
 The `Dataset` contains a `manifest: RwLock<Manifest>` field which is lazily initialised from disk on first access by:
 
 1. Reading the file header to determine manifest `offset` and `length`.
-2. Deserializing the on disk CBOR manifest into an in memory `Manifest` instance.
+2. Deserializing the on-disk CBOR manifest into an in-memory `Manifest` instance.
 3. Downgrading access to read guard to minimise contention.
 
-All `write` operations update the manifest in memory before commiting to disk. All subsequent `read` operations acquire
+All `write` operations update the manifest in-memory before commiting to disk. All subsequent `read` operations acquire
 a shared read guard and return the manifest immediately without any file IO.
 
 **Phase 2: Segment Pruning**
