@@ -4,9 +4,9 @@
 //! repository. Files are organised as a sequence of self-describing segments followed by a
 //! manifest, supporting append-heavy ingestion and lazy random-access reads via `mmap`.
 //!
-//! The crate-level [`Sector`] type is a streamable byte range over a memory-mapped file. The
-//! [`NonZeroUnsigned`] marker trait enumerates the integer widths approved for storing buffer
-//! offsets. The [`Error`] enum is the single error returned from every fallible API.
+//! The crate-level [`Sector`] type represents a contiguous byte range within the file.
+//! The [`NonZeroUnsigned`] marker trait enumerates the integer widths approved for storing
+//! buffer offsets. The [`Error`] enum is the single error returned from every fallible API.
 
 mod dataset;
 mod dictionary;
@@ -23,66 +23,27 @@ mod substream;
 use std::cmp::Ordering;
 use std::fmt;
 use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128};
-use std::ops::Range;
-use std::pin::Pin;
-use std::sync::Arc;
-use std::task::{Context, Poll};
-
-use memmap2::Mmap;
-use smol::stream::Stream;
 
 /* ---------------------------------------------------------------------------- Public Exports */
 
 // Re-exports from `dataset`, `stream`, `substream`, `query`, and `dictionary` are added
 // in subsequent implementation phases.
 
-/// A streamable byte range within a `clem` file.
+/// A contiguous byte range within a [`clem`](crate) file.
 ///
-/// [`Sector`] couples a `(offset, length)` pointer with an `Arc`-shared [`Mmap`] handle to the
-/// underlying file. It implements [`Stream`] over `u8`, so callers can consume bytes
-/// asynchronously inside a `smol`-based pipeline.
+/// Represents on-disk data prior to file IO. Passing a small `Sector` reduces overhead
+/// compared to passing an owned data buffer. Sectors enforce the immutability of underlying
+/// on-disk data; callers must copy into an owned type when mutability is required.
 ///
-/// Stream consumption advances an internal cursor; cloning a sector before any bytes have been
-/// consumed yields an independent cursor sharing the same `Arc<Mmap>`. Cloning a partially
-/// consumed sector preserves the cursor position, mirroring [`std::io::Cursor::clone`].
-///
-/// Equality compares only `(offset, length)` per spec §2.6 — two sectors describing the same
-/// byte range are equal regardless of cursor position or which file mapping backs them.
-/// Ordering is descending by `offset`: a sector closer to EOF compares "less than" one earlier
-/// in the file.
+/// Ordering is increasing by [`offset`](Sector::offset): a sector closer to EOF compares
+/// "greater than" one earlier in the file. Equality compares both [`offset`](Sector::offset)
+/// and [`length`](Sector::length).
+#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Sector {
     /// Byte offset to the start of the sector within the file.
     pub offset: u64,
     /// Length of the sector in bytes.
     pub length: usize,
-    /// Shared handle to the memory-mapped file backing this sector.
-    mmap: Arc<Mmap>,
-    /// Read cursor advanced by the [`Stream`] implementation.
-    pos: usize,
-}
-
-impl Sector {
-    /// Constructs a new [`Sector`] with the cursor initialised to the start of the range.
-    #[allow(dead_code, reason = "constructor used by later phases and tests")]
-    pub(crate) fn new(offset: u64, length: usize, mmap: Arc<Mmap>) -> Self {
-        Self {
-            offset,
-            length,
-            mmap,
-            pos: 0,
-        }
-    }
-
-    /// Returns the [`Range`] for slicing a held `mmap` view of the file.
-    pub fn range(&self) -> Range<usize> {
-        let start = self.offset as usize;
-        start..start + self.length
-    }
-
-    /// Returns the underlying byte slice without consuming the [`Stream`] cursor.
-    pub fn bytes(&self) -> &[u8] {
-        &self.mmap.as_ref()[self.range()]
-    }
 }
 
 /// Errors returned by `clem`.
@@ -127,12 +88,14 @@ mod sealed {
 
 /// Marker trait for the unsigned non-zero integer types approved as buffer offsets.
 ///
-/// Implementations exist for [`NonZeroU8`], [`NonZeroU16`], [`NonZeroU32`], [`NonZeroU64`], and
-/// [`NonZeroU128`]. The trait is sealed: implementations outside this crate are not permitted.
+/// Implementations exist for [`NonZeroU8`], [`NonZeroU16`], [`NonZeroU32`], [`NonZeroU64`],
+/// and [`NonZeroU128`]. The trait is sealed: implementations outside this crate are not
+/// permitted.
 ///
-/// Niche optimisation on `NonZero` types lets `Option<Self>` share the same memory layout as
-/// `Self`, encoding the absent state by storing the all-zero pattern. The format spec relies on
-/// this for the `offsets` array in data segment headers, where omitted columns occupy the niche.
+/// Niche optimisation on `NonZero` types lets `Option<Self>` share the same memory layout
+/// as `Self`, encoding the absent state by storing the all-zero pattern. The format spec
+/// relies on this for the `offsets` array in data segment headers, where omitted columns
+/// occupy the niche.
 ///
 /// [`NonZeroU8`]: std::num::NonZeroU8
 /// [`NonZeroU16`]: std::num::NonZeroU16
@@ -144,63 +107,22 @@ pub trait NonZeroUnsigned: Copy + Ord + sealed::Sealed {
     const SIZE: usize;
     /// Writes the value as little-endian bytes into `dst`.
     fn encode(self, dst: &mut [u8]);
-    /// Reads a value from little-endian bytes in `src`. Returns [`None`] if the parsed integer
-    /// is zero (the niche state).
+    /// Reads a value from little-endian bytes in `src`. Returns [`None`] if the parsed
+    /// integer is zero (the niche state).
     fn decode(src: &[u8]) -> Option<Self>;
 }
 
 /* ----------------------------------------------------------------------- Trait Implementations */
 
-impl Clone for Sector {
-    fn clone(&self) -> Self {
-        Self {
-            offset: self.offset,
-            length: self.length,
-            mmap: Arc::clone(&self.mmap),
-            pos: self.pos,
-        }
-    }
-}
-
-impl fmt::Debug for Sector {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Sector")
-            .field("offset", &self.offset)
-            .field("length", &self.length)
-            .finish_non_exhaustive()
-    }
-}
-
-impl PartialEq for Sector {
-    fn eq(&self, other: &Self) -> bool {
-        self.offset == other.offset && self.length == other.length
-    }
-}
-
-impl Eq for Sector {}
-
 impl Ord for Sector {
     fn cmp(&self, other: &Self) -> Ordering {
-        other.offset.cmp(&self.offset)
+        self.offset.cmp(&other.offset)
     }
 }
 
 impl PartialOrd for Sector {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
-    }
-}
-
-impl Stream for Sector {
-    type Item = u8;
-
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<u8>> {
-        let me = self.get_mut();
-        Poll::Ready((me.pos < me.length).then(|| {
-            let idx = me.offset as usize + me.pos;
-            me.pos += 1;
-            me.mmap.as_ref()[idx]
-        }))
     }
 }
 
@@ -272,77 +194,30 @@ impl_nzu! {
 
 #[cfg(test)]
 mod tests {
-    use memmap2::MmapMut;
-    use smol::stream::StreamExt;
-
     use super::*;
 
-    /// Builds a [`Sector`] over an anonymous in-memory mapping containing `data`.
-    fn test_sector(offset: u64, length: usize, data: &[u8]) -> Sector {
-        // SAFETY: Anonymous mmap of small length cannot fail on supported platforms.
-        let mut m = MmapMut::map_anon(data.len().max(1)).expect("Anonymous mmap creation failed");
-        m[..data.len()].copy_from_slice(data);
-        // SAFETY: Freezing a writable mmap to read-only is infallible after a successful map.
-        let mmap = Arc::new(m.make_read_only().expect("Mmap freeze failed"));
-        Sector::new(offset, length, mmap)
+    const fn sec(offset: u64, length: usize) -> Sector {
+        Sector { offset, length }
     }
 
     #[test]
     fn sector_ord_descending() {
-        let a = test_sector(100, 16, &[]);
-        let b = test_sector(200, 16, &[]);
         // Closer to EOF (b) is "less than" earlier (a) per spec §2.6.
-        assert!(b < a);
-        assert!(a > b);
+        assert!(sec(200, 16) > sec(100, 16));
+        assert!(sec(100, 16) < sec(200, 16));
     }
 
     #[test]
     fn sector_eq_compares_offset_and_length() {
-        let a = test_sector(100, 16, &[]);
-        let b = test_sector(100, 16, &[]);
-        let c = test_sector(100, 32, &[]);
+        assert_eq!(sec(100, 16), sec(100, 16));
+        assert_ne!(sec(100, 16), sec(100, 32));
+    }
+
+    #[test]
+    fn sector_is_copy() {
+        let a = sec(10, 5);
+        let b = a;
         assert_eq!(a, b);
-        assert_ne!(a, c);
-    }
-
-    #[test]
-    fn sector_range_for_slicing() {
-        let s = test_sector(10, 5, &[]);
-        assert_eq!(s.range(), 10..15);
-    }
-
-    #[test]
-    fn sector_bytes_returns_full_slice() {
-        let s = test_sector(2, 4, &[1, 2, 3, 4, 5, 6, 7, 8]);
-        assert_eq!(s.bytes(), &[3, 4, 5, 6]);
-    }
-
-    #[test]
-    fn sector_streams_bytes_in_order() {
-        let s = test_sector(2, 4, &[1, 2, 3, 4, 5, 6, 7, 8]);
-        let bytes: Vec<u8> = smol::block_on(s.collect());
-        assert_eq!(bytes, vec![3, 4, 5, 6]);
-    }
-
-    #[test]
-    fn sector_clone_before_consumption_yields_independent_cursors() {
-        let original = test_sector(0, 4, &[10, 20, 30, 40]);
-        let clone = original.clone();
-        let from_orig: Vec<u8> = smol::block_on(original.collect());
-        let from_clone: Vec<u8> = smol::block_on(clone.collect());
-        assert_eq!(from_orig, vec![10, 20, 30, 40]);
-        assert_eq!(from_clone, vec![10, 20, 30, 40]);
-    }
-
-    #[test]
-    fn sector_clone_preserves_partial_consumption() {
-        let mut s = test_sector(0, 4, &[10, 20, 30, 40]);
-        let first = smol::block_on(s.next());
-        assert_eq!(first, Some(10));
-        let resumed: Vec<u8> = smol::block_on(s.clone().collect());
-        let remainder: Vec<u8> = smol::block_on(s.collect());
-        assert_eq!(resumed, vec![20, 30, 40]);
-        assert_eq!(remainder, vec![20, 30, 40]);
     }
 
     #[test]
