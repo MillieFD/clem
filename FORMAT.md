@@ -837,10 +837,10 @@ let result: Vec<R> = dataset
 
 Filters are evaluated in two stages to minimise IO:
 
-| Stage | Scope   | Uses Manifest | Description                                             |
-|-------|---------|---------------|---------------------------------------------------------|
-| One   | Segment | Yes           | Discard entire segments manifest statistics.            |
-| Two   | Row     | No            | Evaluate remaining predicates row-by-row during decode. |
+| Stage   | Scope   | Uses Manifest | Description                                             |
+|---------|---------|---------------|---------------------------------------------------------|
+| First   | Segment | Yes           | Discard entire segments manifest statistics.            |
+| Second  | Row     | No            | Evaluate remaining predicates row-by-row during decode. |
 
 Filters that can be fully satisfied by manifest statistics never cause unnecessary file IO. Filters that require
 individual row values are combined and applied in a single pass across the candidate segments.
