@@ -33,7 +33,7 @@ pub use self::error::Error;
 ///
 /// Implementers must [`Copy`] into an owned type when mutability is required e.g. for downstream
 /// data processing.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
 pub struct Sector {
     /// Byte offset to the start of the sector.
     pub offset: usize,
@@ -86,12 +86,6 @@ pub trait NonZeroUnsigned: Copy + Ord + sealed::Sealed {
 impl Ord for Sector {
     fn cmp(&self, other: &Self) -> Ordering {
         self.offset.cmp(&other.offset)
-    }
-}
-
-impl PartialOrd for Sector {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
     }
 }
 
