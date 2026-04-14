@@ -10,6 +10,7 @@
 
 mod dataset;
 mod dictionary;
+mod error;
 mod io;
 mod manifest;
 mod query;
@@ -24,10 +25,9 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128};
 
-/* ---------------------------------------------------------------------------- Public Exports */
+/* ------------------------------------------------------------------------------ Public Exports */
 
-// Re-exports from `dataset`, `stream`, `substream`, `query`, and `dictionary` are added
-// in subsequent implementation phases.
+pub use self::error::Error;
 
 /// A contiguous byte range within the [`clem`](crate) file.
 ///
@@ -53,46 +53,6 @@ impl Sector {
             length: length.try_into()?,
         })
     }
-}
-
-/// Errors returned by [`clem`](crate).
-#[non_exhaustive]
-#[derive(Debug)]
-pub enum Error {
-    /// Underlying [`std::io::Error`] from the file backing the dataset.
-    Io(std::io::Error),
-    /// CBOR encode or decode failure for a manifest or schema payload.
-    Cbor,
-    /// File magic bytes did not match the expected `clem` signature.
-    Magic,
-    /// File version not recognised by this build of `clem`.
-    Version(u8),
-    /// Unsupported `serde` construct encountered while building a schema.
-    Schema(&'static str),
-    /// Type does not exactly match the existing on-disk schema.
-    SchemaMismatch,
-    /// Type cannot project from the existing on-disk schema.
-    SchemaProjection,
-    /// Referenced schema name not present in the manifest.
-    SchemaMissing(String),
-    /// Referenced column name not present in the schema.
-    Column(String),
-    /// Dictionary type collision in the dataset cache.
-    DictionaryKind,
-    /// Duplicate key on dictionary push.
-    DuplicateKey,
-    /// Row count exceeded `u64::MAX` in a single segment.
-    Count,
-    /// Manifest decode failed and rebuilding from segments did not succeed.
-    Manifest,
-    /// Filter applied to an incompatible column.
-    Filter(&'static str),
-    /// Join leg type or column mismatch.
-    Join(&'static str),
-}
-
-mod sealed {
-    pub trait Sealed {}
 }
 
 /// Marker trait for the unsigned non-zero integer types approved as buffer offsets.
