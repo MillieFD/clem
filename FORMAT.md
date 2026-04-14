@@ -9,7 +9,7 @@ Domain-agnostic high-throughput storage for n-dimensional analytical data, writt
 `clem` maximises read and write performance by separating the data lifecycle into two phases:
 
 1. **In-memory** accumulator optimised for high-throughput ingestion.
-2. **On-disk** archive optimised for range-based querying across arbitrary dimensions.
+2. **On-disk** columnar buffers optimised for range-based querying across arbitrary dimensions.
 
 `clem` provides an extensible backend which can be adapted to suit a variety of scientific applications. Implementers
 benefit from a minimal high-performance core library which can be further enhanced via domain-specific optimisations.
