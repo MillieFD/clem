@@ -173,10 +173,10 @@ On-disk data is represented via a minimal `Sector` struct prior to file IO. This
 /// A contiguous byte range within the file.
 #[derive(Debug, Clone, Ord, PartialOrd, Eq, PartialEq)]
 pub struct Sector {
-    /// Byte offset to the start of the segment.
-    offset: SeekFrom,
+    /// Byte offset to the start of the sector.
+    offset: usize,
     /// Length in bytes.
-    length: usize,
+    length: NonZeroUsize,
 }
 ```
 
