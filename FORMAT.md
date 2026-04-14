@@ -196,8 +196,8 @@ for downstream data processing.
 
 Each `Segment` describes a file region written to disk, defined by a starting `offset` and `length` in bytes. In
 addition to conventional `data` segments – which encode columnar data buffers – format extensibility is achieved via
-segment variants, each identified via a `variant: u8` ID in the segment header. A `length` field allows sequential
-readers to skip to the next segment (no segment footer required).
+segment variants. Each segment type is identified via a `variant: u8` ID in the segment header. A `length` field allows
+sequential readers to skip to the next segment (no segment footer required).
 
 ##### 3.1 Schema Segments
 
