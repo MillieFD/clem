@@ -15,6 +15,15 @@ use std::num::TryFromIntError;
 /* ----------------------------------------------------------------------------- Public Exports */
 
 /// Errors returned by [`clem`](crate).
+///
+/// Enum variants cover various granular error cases that may arise when working with datasets,
+/// schemas, or column operations. Users should consider handling errors explicitly wherever
+/// possible to provide meaningful error messages and recovery actions.
+///
+/// ### Implementation
+///
+/// This enum is `#[non_exhaustive]` meaning additional variants may be added in future versions.
+/// Implementers are advised to include a wildcard arm `_` to account for potential additions.
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Error {
