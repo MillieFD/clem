@@ -76,8 +76,9 @@ pub trait NonZeroUnsigned: Copy + Ord + sealed::Sealed {
     const SIZE: usize;
     /// Writes the value as little-endian bytes into `dst`.
     fn encode(self, dst: &mut [u8]);
-    /// Reads a value from little-endian bytes in `src`. Returns [`None`] if the parsed
-    /// integer is zero (the niche state).
+
+    /// Reads a value from little-endian bytes in `src`. Returns [`None`] if the
+    /// parsed integer is zero (the niche state).
     fn decode(src: &[u8]) -> Option<Self>;
 }
 
