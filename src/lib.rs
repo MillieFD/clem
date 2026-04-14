@@ -18,7 +18,7 @@ mod segment;
 mod stream;
 mod substream;
 
-/* --------------------------------------------------------------------------- Private Imports */
+/* ----------------------------------------------------------------------------- Private Imports */
 
 use std::cmp::Ordering;
 use std::fmt;
@@ -29,24 +29,33 @@ use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128};
 // Re-exports from `dataset`, `stream`, `substream`, `query`, and `dictionary` are added
 // in subsequent implementation phases.
 
-/// A contiguous byte range within a [`clem`](crate) file.
+/// A contiguous byte range within the [`clem`](crate) file.
 ///
-/// Represents on-disk data prior to file IO. Passing a small `Sector` reduces overhead
-/// compared to passing an owned data buffer. Sectors enforce the immutability of underlying
-/// on-disk data; callers must copy into an owned type when mutability is required.
-///
-/// Ordering is increasing by [`offset`](Sector::offset): a sector closer to EOF compares
-/// "greater than" one earlier in the file. Equality compares both [`offset`](Sector::offset)
-/// and [`length`](Sector::length).
-#[derive(Debug, Clone, Copy, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+/// Implementers must [`Copy`] into an owned type when mutability is required e.g. for downstream
+/// data processing.
+#[derive(Debug, Copy, Clone, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Sector {
-    /// Byte offset to the start of the sector within the file.
-    pub offset: u64,
-    /// Length of the sector in bytes.
-    pub length: usize,
+    /// Byte offset to the start of the sector.
+    pub offset: usize,
+    /// Total length of the sector in bytes.
+    pub length: NonZeroUsize,
 }
 
-/// Errors returned by `clem`.
+impl Sector {
+    pub fn new<A, B>(offset: A, length: B) -> Result<Self, Error>
+    where
+        A: TryInto<usize>,
+        B: TryInto<NonZeroUsize>,
+        Error: From<A::Error> + From<B::Error>,
+    {
+        Ok(Self {
+            offset: offset.try_into()?,
+            length: length.try_into()?,
+        })
+    }
+}
+
+/// Errors returned by [`clem`](crate).
 #[non_exhaustive]
 #[derive(Debug)]
 pub enum Error {
