@@ -1,12 +1,30 @@
 //! Domain-agnostic high-throughput storage for n-dimensional analytical data.
 //!
-//! `clem` implements the columnar storage format described in `FORMAT.md` of the source
-//! repository. Files are organised as a sequence of self-describing segments followed by a
-//! manifest, supporting append-heavy ingestion and lazy random-access reads via `mmap`.
+//! ---
 //!
-//! The crate-level [`Sector`] type represents a contiguous byte range within the file.
-//! The [`NonZeroUnsigned`] marker trait enumerates the integer widths approved for storing
-//! buffer offsets. The [`Error`] enum is the single error returned from every fallible API.
+//! `clem` maximises read and write performance by separating the data lifecycle into two phases:
+//!
+//! 1. **In-memory** accumulator optimised for high-throughput ingestion.
+//! 2. **On-disk** columnar archive optimised for range-based querying across arbitrary dimensions.
+//!
+//! `clem` provides an extensible backend which can be adapted to suit a variety of scientific
+//! applications. Implementers benefit from a minimal high-performance core library which can be
+//! further enhanced via domain-specific optimisations.
+//!
+//! Files are organised as a sequence of self-describing **segments** followed by a **manifest** and
+//! optional **metadata**. See the [`FORMAT.md`](FORMAT.md) specification for more details.
+//!
+//! ### Sector vs Segment
+//!
+//! Each `Segment` is a self-describing contiguous file region written to disk. In addition to
+//! conventional `data` segments – which encode columnar data buffers – format extensibility is
+//! achieved via segment variants. Each segment type is identified via a `variant: u8` ID in the
+//! segment header. A `length` field allows sequential readers to skip to the next segment (no
+//! segment footer required).
+//!
+//! A [`Sector`] is the minimal abstraction: a contiguous byte range within a file, described by a
+//! starting [`offset`](Sector::offset) and [`length`](Sector::length) in bytes. A sector can
+//! describe any contiguous file region, from a single columnar buffer to an entire segment.
 
 mod dataset;
 mod dictionary;
@@ -21,23 +39,32 @@ mod substream;
 
 /* ----------------------------------------------------------------------------- Private Imports */
 
+use minicbor::{Decode, Encode};
+use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::fmt;
-use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128};
+use std::num::{NonZeroU8, NonZeroU16, NonZeroU32, NonZeroU64, NonZeroU128, NonZeroUsize};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
+pub use self::dataset::Dataset;
+pub use self::dictionary::{Dictionary, Index};
 pub use self::error::Error;
+pub use self::query::{Cursor, Query};
+pub use self::stream::Stream;
+pub use self::substream::SubStream;
 
 /// A contiguous byte range within the [`clem`](crate) file.
 ///
 /// Implementers must [`Copy`] into an owned type when mutability is required e.g. for downstream
 /// data processing.
-#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, PartialOrd, Serialize, Deserialize, Encode, Decode)]
+#[cbor(tag(102))]
 pub struct Sector {
     /// Byte offset to the start of the sector.
+    #[n(0)]
     pub offset: usize,
     /// Total length of the sector in bytes.
+    #[n(1)]
     pub length: NonZeroUsize,
 }
 
@@ -55,31 +82,23 @@ impl Sector {
     }
 }
 
-/// Marker trait for the unsigned non-zero integer types approved as buffer offsets.
-///
-/// Implementations exist for [`NonZeroU8`], [`NonZeroU16`], [`NonZeroU32`], [`NonZeroU64`],
-/// and [`NonZeroU128`]. The trait is sealed: implementations outside this crate are not
-/// permitted.
-///
-/// Niche optimisation on `NonZero` types lets `Option<Self>` share the same memory layout
-/// as `Self`, encoding the absent state by storing the all-zero pattern. The format spec
-/// relies on this for the `offsets` array in data segment headers, where omitted columns
-/// occupy the niche.
-///
-/// [`NonZeroU8`]: std::num::NonZeroU8
-/// [`NonZeroU16`]: std::num::NonZeroU16
-/// [`NonZeroU32`]: std::num::NonZeroU32
-/// [`NonZeroU64`]: std::num::NonZeroU64
-/// [`NonZeroU128`]: std::num::NonZeroU128
-pub trait NonZeroUnsigned: Copy + Ord + sealed::Sealed {
-    /// Width in bytes of the underlying integer.
-    const SIZE: usize;
-    /// Writes the value as little-endian bytes into `dst`.
-    fn encode(self, dst: &mut [u8]);
-
-    /// Reads a value from little-endian bytes in `src`. Returns [`None`] if the
-    /// parsed integer is zero (the niche state).
-    fn decode(src: &[u8]) -> Option<Self>;
+/// Marker trait for unsigned [`non-zero`](core::num::nonzero::NonZero) integer types.
+pub trait NonZeroUInt: Copy + Ord + Sized {
+    /// A constant representing the multiplicative identity element for the implementing type.
+    ///
+    /// Multiplication by this constant should leave any compatible instance of the type unchanged.
+    ///
+    /// ### Example
+    ///
+    /// ```rust
+    /// fn noop<T: NonZeroUInt>(value: T) {
+    ///    assert_eq!(T::ONE * value, value);
+    ///    assert_eq!(value * T::ONE, value);
+    /// }
+    /// ```
+    ///
+    /// [`Self::ONE`] represents the minimum permissible value of the implementing type.
+    const ONE: Self;
 }
 
 /* ----------------------------------------------------------------------- Trait Implementations */
@@ -90,133 +109,77 @@ impl Ord for Sector {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Io(e) => write!(f, "io: {e}"),
-            Self::Cbor => f.write_str("cbor encode or decode failed"),
-            Self::Magic => f.write_str("invalid magic bytes"),
-            Self::Version(v) => write!(f, "unrecognised version: {v}"),
-            Self::Schema(s) => write!(f, "schema build: {s}"),
-            Self::SchemaMismatch => f.write_str("schema mismatch"),
-            Self::SchemaProjection => f.write_str("schema cannot project"),
-            Self::SchemaMissing(s) => write!(f, "schema not found: {s}"),
-            Self::Column(c) => write!(f, "column not found: {c}"),
-            Self::DictionaryKind => f.write_str("dictionary type collision"),
-            Self::DuplicateKey => f.write_str("duplicate dictionary key"),
-            Self::Count => f.write_str("row count overflow"),
-            Self::Manifest => f.write_str("manifest decode failed"),
-            Self::Filter(s) => write!(f, "filter: {s}"),
-            Self::Join(s) => write!(f, "join: {s}"),
-        }
-    }
+impl NonZeroUInt for NonZeroU8 {
+    const ONE: Self = Self::MIN;
 }
 
-impl std::error::Error for Error {
-    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        match self {
-            Self::Io(e) => Some(e),
-            _ => None,
-        }
-    }
+impl NonZeroUInt for NonZeroU16 {
+    const ONE: Self = Self::MIN;
 }
 
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
-    }
+impl NonZeroUInt for NonZeroU32 {
+    const ONE: Self = Self::MIN;
 }
 
-macro_rules! impl_nzu {
-    ($($t:ident => $p:ty),* $(,)?) => {
-        $(
-            impl sealed::Sealed for $t {}
-            impl NonZeroUnsigned for $t {
-                const SIZE: usize = size_of::<$p>();
-                fn encode(self, dst: &mut [u8]) {
-                    dst[..Self::SIZE].copy_from_slice(&self.get().to_le_bytes());
-                }
-                fn decode(src: &[u8]) -> Option<Self> {
-                    let mut buf = [0u8; size_of::<$p>()];
-                    buf.copy_from_slice(&src[..Self::SIZE]);
-                    Self::new(<$p>::from_le_bytes(buf))
-                }
-            }
-        )*
-    };
+impl NonZeroUInt for NonZeroU64 {
+    const ONE: Self = Self::MIN;
 }
 
-impl_nzu! {
-    NonZeroU8 => u8,
-    NonZeroU16 => u16,
-    NonZeroU32 => u32,
-    NonZeroU64 => u64,
-    NonZeroU128 => u128,
+impl NonZeroUInt for NonZeroU128 {
+    const ONE: Self = Self::MIN;
 }
 
-/* ------------------------------------------------------------------------------------- Tests */
+/* --------------------------------------------------------------------------------------- Tests */
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    const fn sec(offset: u64, length: usize) -> Sector {
-        Sector { offset, length }
+    #[test]
+    fn sector_ord() {
+        let hi = Sector::new(200, 16).expect("Sector::new failed for hi");
+        let lo = Sector::new(100, 16).expect("Sector::new failed for lo");
+        assert!(hi > lo);
+        assert!(lo < hi);
     }
 
     #[test]
-    fn sector_ord_descending() {
-        // Closer to EOF (b) is "less than" earlier (a) per spec §2.6.
-        assert!(sec(200, 16) > sec(100, 16));
-        assert!(sec(100, 16) < sec(200, 16));
+    fn sector_eq() {
+        let short = Sector::new(100, 16).expect("Sector::new failed for short");
+        let long = Sector::new(100, 32).expect("Sector::new failed for long");
+        assert_ne!(short, long);
     }
 
     #[test]
-    fn sector_eq_compares_offset_and_length() {
-        assert_eq!(sec(100, 16), sec(100, 16));
-        assert_ne!(sec(100, 16), sec(100, 32));
-    }
-
-    #[test]
-    fn sector_is_copy() {
-        let a = sec(10, 5);
+    fn sector_copy() {
+        let a = Sector::new(10, 5).expect("Sector::new failed");
         let b = a;
         assert_eq!(a, b);
     }
 
     #[test]
-    fn nzu_roundtrip() {
-        fn check<T: NonZeroUnsigned + fmt::Debug>(v: T) {
-            let mut buf = vec![0u8; T::SIZE];
-            v.encode(&mut buf);
-            assert_eq!(T::decode(&buf), Some(v));
-        }
-        check(NonZeroU8::MIN);
-        check(NonZeroU8::MAX);
-        check(NonZeroU16::MIN);
-        check(NonZeroU16::MAX);
-        check(NonZeroU32::MIN);
-        check(NonZeroU32::MAX);
-        check(NonZeroU64::MIN);
-        check(NonZeroU64::MAX);
-        check(NonZeroU128::MIN);
-        check(NonZeroU128::MAX);
+    fn non_zero_uint_ord() {
+        assert!(NonZeroU8::MIN < NonZeroU8::MAX);
+        assert!(NonZeroU16::MIN < NonZeroU16::MAX);
+        assert!(NonZeroU32::MIN < NonZeroU32::MAX);
+        assert!(NonZeroU64::MIN < NonZeroU64::MAX);
+        assert!(NonZeroU128::MIN < NonZeroU128::MAX);
     }
 
     #[test]
-    fn nzu_decode_zero_is_none() {
-        let buf = [0u8; 8];
-        assert_eq!(NonZeroU64::decode(&buf), None);
+    fn non_zero_uint_one() {
+        assert_eq!(NonZeroU8::ONE.get() * NonZeroU8::new(2).unwrap().get(), 2);
+        assert_eq!(NonZeroU16::ONE.get() * NonZeroU16::new(2).unwrap().get(), 2);
+        assert_eq!(NonZeroU32::ONE.get() * NonZeroU32::new(2).unwrap().get(), 2);
+        assert_eq!(NonZeroU64::ONE.get() * NonZeroU64::new(2).unwrap().get(), 2);
     }
 
     #[test]
-    fn niche_optimisation_holds() {
+    fn niche_optimisation() {
+        assert_eq!(size_of::<Option<NonZeroU8>>(), size_of::<NonZeroU8>());
+        assert_eq!(size_of::<Option<NonZeroU16>>(), size_of::<NonZeroU16>());
+        assert_eq!(size_of::<Option<NonZeroU32>>(), size_of::<NonZeroU32>());
         assert_eq!(size_of::<Option<NonZeroU64>>(), size_of::<NonZeroU64>());
-    }
-
-    #[test]
-    fn error_display_includes_io_source() {
-        let e: Error = std::io::Error::other("boom").into();
-        assert!(format!("{e}").contains("boom"));
+        assert_eq!(size_of::<Option<NonZeroU128>>(), size_of::<NonZeroU128>());
     }
 }
