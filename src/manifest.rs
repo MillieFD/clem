@@ -198,6 +198,7 @@ mod number {
 
     impl Number {
         /// Returns the corresponding Rust primitive type for this numeric descriptor.
+        #[rustfmt::skip]
         pub fn type_id(&self) -> TypeId {
             match self {
                 Self { kind: Kind::UInt, bytes: 1 } => TypeId::of::<u8>(),
