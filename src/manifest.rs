@@ -95,3 +95,23 @@ pub(crate) struct Manifest {
     pub metadata: Option<Sector>,
 }
 
+/// A minimal schema segment **descriptor** that specifies:
+///
+/// 1. [`Sector`] where the schema segment is located on disk.
+/// 2. [`BTreeMap`] of [`Column`] descriptors keyed by name.
+///
+/// This type does **not** contain the actual schema definition or columnar data buffers; it is a
+/// lightweight descriptor for segment discovery and access without holding their contents in
+/// memory. An on-disk schema segment encodes the schema definition (column names and types) while
+/// on-disk data segments contain the columnar buffers.
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+pub(crate) struct Schema {
+    /// Location of the schema segment including header.
+    #[n(0)]
+    pub sector: Sector,
+    /// Column descriptors keyed by name.
+    #[n(1)]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub columns: BTreeMap<String, Column>,
+}
+
