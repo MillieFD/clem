@@ -110,7 +110,7 @@ pub(crate) struct Schema {
     #[n(0)]
     pub sector: Sector,
     /// Column descriptors keyed by name.
-    #[n(1)]
+    #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub columns: BTreeMap<String, Column>,
 }
