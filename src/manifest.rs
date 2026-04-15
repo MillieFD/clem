@@ -117,9 +117,9 @@ pub(crate) struct Schema {
 
 /// A minimal column **descriptor** that wraps a list of [`Buffer`] descriptors.
 ///
-/// This type does **not** contain the actual buffer data; it is a lightweight descriptor for
-/// column discovery and access without holding buffer contents in memory. Data is stored via
-/// one or more on-disk data segments, each of which contains a buffer for this column.
+/// This type does **not** contain the actual buffer data; it is a lightweight descriptor for column
+/// discovery and access without holding buffer contents in memory. Data is stored via one or more
+/// on-disk data segments, each of which contains a buffer for this column.
 ///
 /// [`Vec`] order in-memory is **not** guaranteed to reflect [`Sector`] order on-disk.
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -128,5 +128,33 @@ pub(crate) struct Column {
     #[cbor(n(0), skip_if = "Vec::is_empty")]
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub buffers: Vec<Buffer>,
+}
+
+/// A minimal columnar buffer **descriptor** that specifies:
+///
+/// 1. [`Sector`] where the buffer is located on disk.
+/// 2. Number of data entries e.g. for index arithmetic.
+/// 3. Buffer statistics such as `min` and `max` for predicate pruning.
+///
+/// This type does **not** contain the actual buffer data; it is a lightweight descriptor for buffer
+/// discovery and access without holding buffer contents in memory. Data is stored via contiguous
+/// buffers distributed across one or more on-disk data segments.
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+pub(crate) struct Buffer {
+    /// Location of the schema segment including header.
+    #[n(0)]
+    pub sector: Sector,
+    /// Number of data entries.
+    // NOTE: Empty buffers are not written to disk. Use NonZeroUsize to enforce this invariant.
+    #[n(1)]
+    pub count: NonZeroUsize,
+    /// Minimum value recorded in this buffer. Used for segment-level predicate pruning.
+    #[cbor(n(2), skip_if = "Node::is_none")]
+    #[serde(default, skip_serializing_if = "Node::is_none")]
+    pub min: Node,
+    /// Maximum value recorded in this buffer. Used for segment-level predicate pruning.
+    #[cbor(n(3), skip_if = "Node::is_none")]
+    #[serde(default, skip_serializing_if = "Node::is_none")]
+    pub max: Node,
 }
 
