@@ -114,6 +114,7 @@ impl From<std::convert::Infallible> for Error {
 
 /* --------------------------------------------------------------------------------------- Tests */
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
