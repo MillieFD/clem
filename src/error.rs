@@ -113,3 +113,23 @@ impl From<std::convert::Infallible> for Error {
 }
 
 /* --------------------------------------------------------------------------------------- Tests */
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn from_io_error() {
+        use std::io::{self, ErrorKind};
+        let source = io::Error::new(ErrorKind::Other, "Test IO error");
+        let error: Error = source.into();
+        assert_eq!(error.to_string(), "File IO error → Test IO error");
+    }
+
+    #[test]
+    fn from_utf8_error() {
+        use std::str;
+        let source = str::from_utf8(b"\xFF").unwrap_err();
+        let error: Error = source.into();
+        assert!(error.to_string().starts_with("UTF8 from u8 error →"));
+    }
+}
