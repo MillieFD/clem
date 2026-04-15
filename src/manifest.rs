@@ -158,3 +158,61 @@ pub(crate) struct Buffer {
     pub max: Node,
 }
 
+mod number {
+    use minicbor::{Decode, Encode};
+    use serde::{Deserialize, Serialize};
+    use std::any::TypeId;
+
+    /// Classification of Rust numeric primitive types.
+    #[non_exhaustive]
+    #[derive(Debug, Copy, Clone, Serialize, Deserialize, Encode, Decode)]
+    pub(super) enum Kind {
+        /// Unsigned integer type.
+        #[n(0)]
+        UInt,
+        /// Signed integer type.
+        #[n(1)]
+        Int,
+        /// Floating point type.
+        #[n(2)]
+        Float,
+    }
+
+    /// A minimal numeric type **descriptor** that specifies:
+    ///
+    /// 1. The numeric classification.
+    /// 2. Number of bytes used to encode the value.
+    ///
+    /// This type does **not** contain the actual numeric value; it is a lightweight descriptor for
+    /// numeric type information without holding values in memory. Each unique combination of `Kind`
+    /// and `bytes` corresponds to a specific Rust numeric primitive type.
+    #[derive(Debug, Copy, Clone, Serialize, Deserialize, Encode, Decode)]
+    pub(super) struct Number {
+        /// Classification of the numeric type.
+        #[n(0)]
+        kind: Kind,
+        /// Number of bytes used to encode the value.
+        #[n(1)]
+        bytes: u8,
+    }
+
+    impl Number {
+        /// Returns the corresponding Rust primitive type for this numeric descriptor.
+        pub fn type_id(&self) -> TypeId {
+            match self {
+                Self { kind: Kind::UInt, bytes: 1 } => TypeId::of::<u8>(),
+                Self { kind: Kind::UInt, bytes: 2 } => TypeId::of::<u16>(),
+                Self { kind: Kind::UInt, bytes: 4 } => TypeId::of::<u32>(),
+                Self { kind: Kind::UInt, bytes: 8 } => TypeId::of::<u64>(),
+                Self { kind: Kind::Int, bytes: 1 } => TypeId::of::<i8>(),
+                Self { kind: Kind::Int, bytes: 2 } => TypeId::of::<i16>(),
+                Self { kind: Kind::Int, bytes: 4 } => TypeId::of::<i32>(),
+                Self { kind: Kind::Int, bytes: 8 } => TypeId::of::<i64>(),
+                Self { kind: Kind::Float, bytes: 4 } => TypeId::of::<f32>(),
+                Self { kind: Kind::Float, bytes: 8 } => TypeId::of::<f64>(),
+                _ => unreachable!("Unrecognised numeric type descriptor {self:?}"),
+            }
+        }
+    }
+}
+
