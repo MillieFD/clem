@@ -101,7 +101,7 @@ pub(crate) struct Manifest {
 /// 2. [`BTreeMap`] of [`Column`] descriptors keyed by name.
 ///
 /// This type does **not** contain the actual schema definition or columnar data buffers; it is a
-/// lightweight descriptor for segment discovery and access without holding their contents in
+/// lightweight descriptor for segment discovery and access without holding buffer contents in
 /// memory. An on-disk schema segment encodes the schema definition (column names and types) while
 /// on-disk data segments contain the columnar buffers.
 #[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
@@ -113,5 +113,20 @@ pub(crate) struct Schema {
     #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub columns: BTreeMap<String, Column>,
+}
+
+/// A minimal column **descriptor** that wraps a list of [`Buffer`] descriptors.
+///
+/// This type does **not** contain the actual buffer data; it is a lightweight descriptor for
+/// column discovery and access without holding buffer contents in memory. Data is stored via
+/// one or more on-disk data segments, each of which contains a buffer for this column.
+///
+/// [`Vec`] order in-memory is **not** guaranteed to reflect [`Sector`] order on-disk.
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+pub(crate) struct Column {
+    /// List of [`Buffer`] descriptors for this column across all data segments.
+    #[cbor(n(0), skip_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub buffers: Vec<Buffer>,
 }
 
