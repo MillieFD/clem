@@ -8,9 +8,7 @@ Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the conditions of the LICENSE are met.
 */
 
-use std::convert::Infallible;
 use std::fmt;
-use std::num::TryFromIntError;
 
 /* ----------------------------------------------------------------------------- Public Exports */
 
@@ -29,36 +27,18 @@ use std::num::TryFromIntError;
 pub enum Error {
     /// Underlying [`std::io::Error`] from the file backing the [`Dataset`].
     Io(std::io::Error),
-    /// CBOR encode or decode failure for a manifest or schema payload.
-    Cbor,
-    /// On-disk data is truncated or structurally invalid.
-    Corrupt,
+    /// Underlying [`std::str::Utf8Error`] while attempting to interpret `[u8]` as a [`String`].
+    Utf8(std::str::Utf8Error),
+    /// Underlying [`std::num::TryFromIntError`] from a checked conversion between two types.
+    Convert(std::num::TryFromIntError),
+    /// CBOR encoding failure for a manifest or schema payload.
+    Encode(String),
+    /// CBOR decoding failure for a manifest or schema payload.
+    Decode(minicbor::decode::Error),
     /// File magic bytes did not match the expected `clem` signature.
     Magic,
     /// File version not recognised by this build of [`clem`](crate).
     Version(u8),
-    /// Unsupported [`serde`] construct encountered while building a schema.
-    Schema(&'static str),
-    /// Type does not exactly match the existing on-disk schema.
-    SchemaMismatch,
-    /// Type cannot project from the existing on-disk schema.
-    SchemaProjection,
-    /// Referenced schema name not present in the manifest.
-    SchemaMissing(String),
-    /// Referenced column name not present in the schema.
-    Column(String),
-    /// Dictionary type collision in the [`Dataset`] cache.
-    DictionaryKind,
-    /// Duplicate key on dictionary push.
-    DuplicateKey,
-    /// Row count exceeded `u64::MAX` in a single segment.
-    Count,
-    /// Manifest decode failed and segment-walk rebuild did not succeed.
-    Manifest,
-    /// Filter applied to an incompatible column.
-    Filter(&'static str),
-    /// Join leg type or column mismatch.
-    Join(&'static str),
 }
 
 /* ----------------------------------------------------------------------- Trait Implementations */
@@ -66,22 +46,13 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Io(e) => write!(f, "io: {e}"),
-            Self::Cbor => f.write_str("cbor encode or decode failed"),
-            Self::Corrupt => f.write_str("corrupt file data"),
-            Self::Magic => f.write_str("invalid magic bytes"),
-            Self::Version(v) => write!(f, "unrecognised version: {v}"),
-            Self::Schema(s) => write!(f, "schema build: {s}"),
-            Self::SchemaMismatch => f.write_str("schema mismatch"),
-            Self::SchemaProjection => f.write_str("schema cannot project"),
-            Self::SchemaMissing(s) => write!(f, "schema not found: {s}"),
-            Self::Column(c) => write!(f, "column not found: {c}"),
-            Self::DictionaryKind => f.write_str("dictionary type collision"),
-            Self::DuplicateKey => f.write_str("duplicate dictionary key"),
-            Self::Count => f.write_str("row count overflow"),
-            Self::Manifest => f.write_str("manifest decode failed"),
-            Self::Filter(s) => write!(f, "filter: {s}"),
-            Self::Join(s) => write!(f, "join: {s}"),
+            Self::Io(e) => write!(f, "File IO error → {e}"),
+            Self::Utf8(e) => write!(f, "UTF8 from u8 error → {e}"),
+            Self::Convert(e) => write!(f, "Integer type conversion error → {e}"),
+            Self::Encode(msg) => write!(f, "CBOR encode error → {msg}"),
+            Self::Decode(e) => write!(f, "CBOR decode error → {e}"),
+            Self::Magic => f.write_str("File is not a valid `clem` dataset"),
+            Self::Version(v) => write!(f, "Unrecognised version → {v}"),
         }
     }
 }
@@ -90,13 +61,55 @@ impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::Io(e) => Some(e),
-            _ => None,
+            Self::Utf8(e) => Some(e),
+            Self::Convert(e) => Some(e),
+            Self::Decode(e) => Some(e),
+            _ => None, // Some variants do not wrap an inner error source
         }
     }
 }
 
 impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        Self::Io(e)
+    fn from(error: std::io::Error) -> Self {
+        Self::Io(error)
     }
 }
+
+impl From<std::str::Utf8Error> for Error {
+    fn from(error: std::str::Utf8Error) -> Self {
+        Self::Utf8(error)
+    }
+}
+
+impl From<std::num::TryFromIntError> for Error {
+    fn from(error: std::num::TryFromIntError) -> Self {
+        Self::Convert(error)
+    }
+}
+
+impl<E> From<minicbor::encode::Error<E>> for Error
+where
+    Error: for<'a> From<&'a E>,
+    E: Into<Error> + fmt::Display,
+{
+    fn from(error: minicbor::encode::Error<E>) -> Self {
+        match error.as_write() {
+            Some(e) => e.into(),
+            None => Self::Encode(error.to_string()),
+        }
+    }
+}
+
+impl From<minicbor::decode::Error> for Error {
+    fn from(error: minicbor::decode::Error) -> Self {
+        Self::Decode(error)
+    }
+}
+
+impl From<std::convert::Infallible> for Error {
+    fn from(_: std::convert::Infallible) -> Self {
+        unreachable!()
+    }
+}
+
+/* --------------------------------------------------------------------------------------- Tests */
