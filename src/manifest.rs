@@ -58,3 +58,40 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! Each `Buffer` contains a `sector: Sector` alongside data statistics such as `min` and `max` for
 //! predicate pruning.
 
+use crate::{Error, Sector};
+use minicbor::{Decode, Encode};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::num::{NonZeroU64, NonZeroUsize};
+
+/* ------------------------------------------------------------------------------ Public Exports */
+
+/// Manifest of file segments and accompanying metadata for random access and predicate pruning.
+/// See the module-level documentation for details.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode)]
+#[cbor(tag(100))]
+pub(crate) struct Manifest {
+    /// Schema segments keyed by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[n(0)]
+    pub schemas: BTreeMap<String, Schema>,
+    /// Dictionaries keyed by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[n(1)]
+    pub dictionaries: BTreeMap<String, DictEntry>,
+    /// Implementers can use the optional free-form `metadata.toml` to attach file-level
+    /// domain-specific information such as:
+    ///
+    /// - Date and time
+    /// - Experimental parameters
+    /// - Provenance
+    ///
+    /// If a metadata section is included in the file, a corresponding `length` and `offset` are
+    /// described in the `manifest`. The core library includes a read and write surface, but
+    /// implementers must include their own metadata parsing and validation logic.
+    #[cfg(feature = "metadata")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[n(2)]
+    pub metadata: Option<Sector>,
+}
+
