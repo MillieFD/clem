@@ -12,7 +12,10 @@ repository = "https://github.com/MillieFD/clem"
 [dependencies]
 smol = "2.0"
 memmap2 = "0.9"
-ciborium = "0.2"
+
+[dependencies.minicbor]
+version = "2.2"
+features = ["derive", "std"]
 
 [dependencies.serde]
 version = "1.0"
