@@ -75,11 +75,11 @@ pub(crate) struct Manifest {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[n(0)]
     pub schemas: BTreeMap<String, Schema>,
-    /// Dictionaries keyed by name.
+    /// Dictionaries keyed by name. Entries are **not** duplicated in the generic `schemas` map.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
     pub dictionaries: BTreeMap<String, Dictionary>,
-    /// Indexes keyed by name.
+    /// Indexes keyed by name. Entries are **not** duplicated in the generic `dictionaries` map.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[cbor(n(2), skip_if = "BTreeMap::is_empty")]
     pub indexes: BTreeMap<String, Index>,
