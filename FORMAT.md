@@ -104,7 +104,7 @@ values:  [a, b, c, d, e, f, g, h]
 ```
 
 The serialized on-disk example (above) is deserialized into the memory representation (below). Implementers must specify
-which type to use for offset storage based on the number of expected elements. A `NonZeroUnsigned` marker trait is
+which type to use for offset storage based on the number of expected elements. A `NonZeroUInt` marker trait is
 implemented for approved types. The `offsets` buffer can simultaneously encode nullability by leveraging
 niche-optimisation on non-zero types.
 
