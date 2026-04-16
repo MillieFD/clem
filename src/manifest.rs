@@ -77,7 +77,7 @@ pub(crate) struct Manifest {
     pub schemas: BTreeMap<String, Schema>,
     /// Dictionaries keyed by name.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    #[n(1)]
+    #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
     pub dictionaries: BTreeMap<String, Dictionary>,
     /// Implementers can use the optional free-form `metadata.toml` to attach file-level
     /// domain-specific information such as:
