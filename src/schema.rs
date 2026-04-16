@@ -132,8 +132,10 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! Implementers are encouraged to export canonical types for convenience, removing the need for
 //! users to reconstruct schema types manually.
 
+use crate::Error;
 use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize, ser};
+use std::any::Any;
 use std::collections::BTreeMap;
 
 /* ------------------------------------------------------------------------------ Public Exports */
@@ -234,6 +236,20 @@ impl Node {
     /// Returns `true` if `self` matches the `None` variant.
     fn is_none(&self) -> bool {
         matches!(self, Self::None)
+    }
+}
+
+/* ----------------------------------------------------------------------- Trait Implementations */
+
+impl Default for Node {
+    fn default() -> Self {
+        Self::None
+    }
+}
+
+impl PartialEq<Self> for Node {
+    fn eq(&self, other: &Self) -> bool {
+        self.type_id() == other.type_id()
     }
 }
 
