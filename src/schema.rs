@@ -230,3 +230,10 @@ pub(crate) enum Node {
     },
 }
 
+impl Node {
+    /// Returns `true` if `self` matches the `None` variant.
+    fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+}
+
