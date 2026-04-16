@@ -222,3 +222,58 @@ mod number {
     }
 }
 
+/// A minimal dictionary segment **descriptor** that specifies:
+///
+/// 1. [`Sector`] where the schema segment is located on disk.
+/// 2. [`BTreeMap`] of [`Column`] descriptors keyed by name.
+///
+/// This type does **not** contain the actual schema definition or columnar data buffers; it is a
+/// lightweight descriptor for segment discovery and access without holding buffer contents in
+/// memory. An on-disk schema segment encodes the schema definition (column names and types) while
+/// on-disk data segments contain the columnar buffers.
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+pub(crate) struct Dictionary {
+    /// Location of the schema segment including header.
+    #[n(0)]
+    pub schema: Sector,
+    /// Column descriptors keyed by name.
+    #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub columns: BTreeMap<String, Column>,
+}
+
+impl Dictionary {
+    /// Returns a reference to the "key" column descriptor for this dictionary.
+    pub fn key(&self) -> &Column {
+        // SAFETY: Dictionaries are guaranteed to contain a "key" column at the type tree root.
+        // 1. Serializer rejects incompatible type layouts during dictionary initialisation.
+        // 2. Deserializer compares the type tree root against the required { key: K, value: V }
+        //    layout. Only exact matches are deserialized into Dictionary instances.
+        self.columns
+            .get("key")
+            .expect("Dictionary does not contain a 'key' column")
+    }
+}
+
+/// A minimal dictionary index **descriptor** that specifies:
+///
+/// 1. Underlying [`Dictionary`] descriptor.
+/// 2. Next available `key` for appending new entries to the dictionary.
+///
+/// This type does **not** contain the actual dictionary entries; it is a lightweight descriptor for
+/// index discovery and access without holding buffer contents in memory. An on-disk schema segment
+/// encodes the schema definition (column names and types) while on-disk data segments contain the
+/// columnar buffers.
+#[derive(Debug, Clone, Serialize, Deserialize, Encode, Decode)]
+pub(crate) struct Index {
+    /// Underlying [`Dictionary`] descriptor.
+    #[n(0)]
+    pub dictionary: Dictionary,
+    /// Next available key.
+    ///
+    /// Data is stored via an arbitrary-length [`Vec`] containing raw bytes encoded in
+    /// platform-native endianness. Decode according to the `Key` type described by the schema.
+    #[n(1)]
+    pub next: Vec<u8>,
+}
+
