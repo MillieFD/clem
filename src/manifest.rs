@@ -8,7 +8,7 @@ Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the conditions of the LICENSE are met.
 */
 
-//! A [`manifest`][1] footer lists file [`segments`][2] by type. Data segments are grouped by schema
+//! A [`manifest`] footer lists file [`segments`] by type. Data segments are grouped by schema
 //! alongside segment-level statistics e.g. min and max values. The manifest acts like the index
 //! of a book to enhance:
 //!
@@ -62,12 +62,12 @@ use crate::{Error, Sector};
 use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-use std::num::{NonZeroU64, NonZeroUsize};
+use std::num::NonZeroUsize;
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
 /// Manifest of file segments and accompanying metadata for random access and predicate pruning.
-/// See the module-level documentation for details.
+/// See the [module-level documentation](self) for details.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, Encode, Decode)]
 #[cbor(tag(100))]
 pub(crate) struct Manifest {
@@ -97,6 +97,21 @@ pub(crate) struct Manifest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[n(2)]
     pub metadata: Option<Sector>,
+}
+
+impl Manifest {
+    /// Encode the [`Manifest`] into CBOR bytes.
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        // SAFETY: minicbor::encode returns Infallible.
+        minicbor::encode(self, &mut buf).expect("Failed to encode manifest as CBOR");
+        buf
+    }
+
+    /// Decode a [`Manifest`] from CBOR bytes.
+    pub fn decode(bytes: &[u8]) -> Result<Self, Error> {
+        minicbor::decode(bytes).map_err(Error::Decode)
+    }
 }
 
 /// A minimal schema segment **descriptor** that specifies:
