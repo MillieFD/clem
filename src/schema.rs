@@ -132,3 +132,101 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! Implementers are encouraged to export canonical types for convenience, removing the need for
 //! users to reconstruct schema types manually.
 
+use minicbor::{Decode, Encode};
+use serde::{Deserialize, Serialize, ser};
+use std::collections::BTreeMap;
+
+/* ------------------------------------------------------------------------------ Public Exports */
+
+/// A minimal type **descriptor** that provides a stable and extensible representation for
+/// platform-agnostic Rust primitives; used when walking the type graph for schema encoding.
+#[derive(Debug, Clone, Eq, Serialize, Deserialize, Encode, Decode)]
+#[non_exhaustive] // To accommodate the potential future stabilisation of additional types.
+pub(crate) enum Node {
+    /* ------------------------------------------------------------ Zero-Size Machine Primitives */
+    /// No value.
+    ///
+    /// `None` is a zero-sized type (ZST) that exists only at the type level and occupies zero bytes
+    /// of hardware memory.
+    #[n(0)]
+    None,
+    /// Rust unit `()` primitive; used when no other meaningful type can be returned.
+    ///
+    /// `Unit` is a zero-sized type (ZST) that exists only at the type level and occupies zero bytes
+    /// of hardware memory.
+    #[n(1)]
+    Unit,
+    /// A sentinel type with no values, representing the result of computations that never complete.
+    ///
+    /// `Never` is a zero-sized type (ZST) that exists only at the type level and occupies zero
+    /// bytes of hardware memory.
+    #[n(2)]
+    Never,
+    /* ----------------------------------------------------------- Fixed-Size Machine Primitives */
+    /// Rust numeric primitives.
+    #[n(3)]
+    Number(#[n(0)] number::Number),
+    /// Boolean primitive which can be `true` or `false`.
+    #[n(4)]
+    Bool,
+    /* -------------------------------------------------------------------- Container Primitives */
+    /// Variable length UTF-8 string encoded as a sequence of bytes.
+    #[n(5)]
+    String,
+    /// Optional (nullable) value wrapping one subgraph.
+    #[n(6)]
+    Option {
+        /// Index of the subgraph root node within the type graph.
+        #[n(0)]
+        subgraph: u32,
+    },
+    /// Fixed size tuple wrapping an arbitrary number of subgraphs.
+    #[n(7)]
+    Tuple {
+        /// Index of each subgraph root node within the type graph.
+        /// [`Vec::len`] returns the number of elements.
+        #[n(0)]
+        subgraphs: Vec<u8>,
+    },
+    /// Variable length sequence wrapping one subgraph.
+    #[n(8)]
+    Sequence {
+        /// Index of the subgraph root node within the type graph.
+        #[n(0)]
+        subgraph: u32,
+    },
+    /* -------------------------------------------------------------------- Algebraic Data Types */
+    /// Named struct wrapping an arbitrary number of named fields; each described by a subgraph.
+    #[n(9)]
+    Struct {
+        /// Struct name.
+        #[n(0)]
+        name: String,
+        /// Field names mapped to subgraph root node indices within the type graph.
+        ///
+        /// [`Vec::len`] returns the number of fields. Field order in-memory is not guaranteed to
+        /// match CBOR order on-disk.
+        #[n(1)]
+        fields: BTreeMap<String, u32>,
+    },
+    /// Named enum wrapping an arbitrary number of variants; each described by a subgraph.
+    #[n(10)]
+    Enum {
+        /// Enum name.
+        #[n(0)]
+        name: String,
+        /// Variant names mapped to subgraph root node indices within the type graph.
+        ///
+        /// Each variant class maps to a specific subgraph root node:
+        ///
+        /// - Unit variant with no fields → `None` subgraph.
+        /// - Tuple variant with unnamed fields → `Tuple` subgraph.
+        /// - Struct variant with named fields → `Struct` subgraph.
+        ///
+        /// [`Vec::len`] returns the number of fields. Field order in-memory is not guaranteed to
+        /// match CBOR order on-disk.
+        #[n(1)]
+        variants: BTreeMap<String, u32>,
+    },
+}
+
