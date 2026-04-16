@@ -145,17 +145,22 @@ pub(crate) struct Buffer {
     #[n(0)]
     pub sector: Sector,
     /// Number of data entries.
-    // NOTE: Empty buffers are not written to disk. Use NonZeroUsize to enforce this invariant.
+    ///
+    /// Empty buffers are never written to disk. [`NonZeroUsize`] is used to enforce this invariant.
     #[n(1)]
     pub count: NonZeroUsize,
     /// Minimum value recorded in this buffer. Used for segment-level predicate pruning.
-    #[cbor(n(2), skip_if = "Node::is_none")]
-    #[serde(default, skip_serializing_if = "Node::is_none")]
-    pub min: Node,
+    ///
+    /// Data is stored via an arbitrary-length [`Vec`] containing raw bytes encoded in
+    /// platform-native endianness. Decode according to the [`Buffer`] type described by the schema.
+    #[n(2)]
+    pub min: Vec<u8>,
     /// Maximum value recorded in this buffer. Used for segment-level predicate pruning.
-    #[cbor(n(3), skip_if = "Node::is_none")]
-    #[serde(default, skip_serializing_if = "Node::is_none")]
-    pub max: Node,
+    ///
+    /// Data is stored via an arbitrary-length [`Vec`] containing raw bytes encoded in
+    /// platform-native endianness. Decode according to the [`Buffer`] type described by the schema.
+    #[n(3)]
+    pub max: Vec<u8>,
 }
 
 mod number {
