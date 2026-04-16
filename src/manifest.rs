@@ -79,6 +79,10 @@ pub(crate) struct Manifest {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
     pub dictionaries: BTreeMap<String, Dictionary>,
+    /// Indexes keyed by name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[cbor(n(2), skip_if = "BTreeMap::is_empty")]
+    pub indexes: BTreeMap<String, Index>,
     /// Implementers can use the optional free-form `metadata.toml` to attach file-level
     /// domain-specific information such as:
     ///
