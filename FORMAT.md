@@ -47,20 +47,20 @@ The file is divided into **self-describing segments** to enable:
 `clem` is optimised for append-heavy workflows and in situ query reads via `mmap`. Segments are immutable once written.
 Whole-segment deletion is permitted but expensive; all downstream segments are moved and the `manifest` is updated.
 
-##### 2.3 Arbitrary Types
+##### 2.3 Arbitrary Type Encoding
 
 `clem` understands **platform-agnostic** primitive types such as `u32` or `f64`. Platform-dependent types such as
 `usize` are deliberately omitted to ensure file portability. Additional user-defined types are embedded directly in
 the schema using a depth-first cursor-based stateful serializer with no per-field allocation on the hot path.
 
 - **Leaf nodes** map to contiguous columnar data buffers via index.
-- **Internal nodes** exist purely for navigation & reconstruction.
+- **Internal nodes** exist purely for navigation and reconstruction.
 
 ```text
-tree schema → array nodes → buffers
+arbitrary type → graph → nodes → buffers
 ```
 
-For example `struct Outer { foo: Inner, bar: i32 }` and `struct Inner { baz: bool, quux: Option<f64> }` can be encoded
+For example, `struct Outer { foo: Inner, bar: i32 }` and `struct Inner { baz: bool, quux: Option<f64> }` can be encoded
 as just three contiguous data buffers and one packed null bitmap arranged sequentially:
 
 ```text
@@ -86,7 +86,7 @@ Outer
 
 The schema itself can be conceptualised as a `struct` where each column becomes a field with a `name` and `type`.
 
-##### 2.4 Unsized Types
+##### 2.4 Unsized Type Encoding
 
 It is not possible to predetermine the disk space required by each instance of an unsized type; there is no guarantee
 that one `Vec<T>` contains the same number of elements as another `Vec<T>`. The `clem` type serializer therefore parses
@@ -96,14 +96,14 @@ unsized types into:
 2. A contiguous region of elements
 
 This design ensures **O(1) random access** and avoids per-element pointer chasing. Sequential scans across the contained
-elements `[T]` remains linear; leveraging columnar optimisations for SIMD and prefetch.
+elements `[T]` remain linear; leveraging columnar optimisations for SIMD and prefetch.
 
 ```text
 offsets: [3, 6, 6]
 values:  [a, b, c, d, e, f, g, h]
 ```
 
-The serialized on-disk example (above) is deserialized into the memory representation (below). Implementers must specify
+The serialized on-disk example above is deserialized into the memory representation below. Implementers must specify
 which type to use for offset storage based on the number of expected elements. A `NonZeroUInt` marker trait is
 implemented for approved types. The `offsets` buffer can simultaneously encode nullability by leveraging
 niche-optimisation on non-zero types.
@@ -444,7 +444,7 @@ can call `Manifest::rebuild` explicitly.
 1. **In-memory** accumulator optimised for high-throughput ingestion.
 2. **In-disk** archive optimised for range-based querying across arbitrary dimensions.
 
-##### 6.1 in-memory Accumulation
+##### 6.1 In-Memory Accumulation
 
 Data is initially written to an **in-memory** accumulator optimised for high-throughput ingestion. The `pub struct 
 Stream` is generic over any type `R` that implements `serde::Serialize` and `serde::Deserialize`. The stream implements
@@ -495,9 +495,9 @@ simultaneously. All interactions with the underlying file and global lock are im
 
 ##### 6.3 Schema Validation
 
-`Dataset::stream` compares the `R` type tree root node name against the manifest `schemas: BTreeMap`; initialising a new
-stream with `schema: R` if no entry exists for the specified name or returning an error if the `R` type tree does not
-exactly match the existing schema structure.
+`Dataset::stream` compares the `R` type graph root node name against the manifest `schemas: BTreeMap`; initialising a
+new stream with `schema: R` if no entry exists for the specified name or returning an error if the `R` type graph does
+not exactly match the existing schema structure.
 
 - An exact structural match is required for read and write validity.
 - Subset-matches (projections) are rejected; use `Dataset::substream` instead.
@@ -505,7 +505,7 @@ exactly match the existing schema structure.
 This design ensures schema verification is performed exactly once. Stream read and write operations can then proceed
 fearlessly without per-request runtime checks on the hot path. Cloning an existing `Stream<R>` bypasses schema
 validation. Multi-consumer workloads should therefore prefer cloning a validated stream instead of calling
-`Dataset::table` repeatedly. Implementers are encouraged to export canonical types for convenience, removing the need
+`Dataset::stream` repeatedly. Implementers are encouraged to export canonical types for convenience, removing the need
 for users to reconstruct schema types manually.
 
 ```rust
