@@ -392,7 +392,7 @@ Manifest
    │     ├─ <column-name>
    │     │  └─ buffers: [Buffer]
    │     │     ├─ sector: Sector
-   │     │     ├─ count: NonZeroU32
+   │     │     ├─ count: NonZeroU64
    │     │     ├─ min: T
    │     │     └─ max: T
    │     ⋮
