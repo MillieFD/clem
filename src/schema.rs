@@ -253,3 +253,82 @@ impl PartialEq<Self> for Node {
     }
 }
 
+mod number {
+    //! Private module provides a minimal stable numeric type **descriptor** for Rust primitives.
+    //!
+    //! Defining a distinct enum variant for each fixed-width machine primitive type is fragile; as
+    //! Rust stabilises new types – such as [`f16`][1] – new enum variants will need to be added,
+    //! which may break backwards compatibility and binary encoding.
+    //!
+    //! Instead, this module defines an extensible [`Number`] descriptor to encode arbitrary numeric
+    //! types via a combination of 'kind' and 'size' fields.
+    //!
+    //! [1]: https://rust-lang.github.io/rfcs/3453-f16-and-f128.html
+
+    use minicbor::{Decode, Encode};
+    use serde::{Deserialize, Serialize};
+    use std::any::TypeId;
+
+    /// Classification of the numeric primitive type.
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+    #[non_exhaustive] // To accommodate the potential stabilisation of additional numeric classes.
+    pub(super) enum Kind {
+        /* ---------------------------------------------------------------------------- Unsigned */
+        /// Unsigned integer type.
+        #[n(0)]
+        UInt,
+        /// Non-zero unsigned integer type.
+        #[n(1)]
+        NonZeroUInt,
+        /* ------------------------------------------------------------------------------ Signed */
+        /// Signed integer type.
+        #[n(2)]
+        Int,
+        /// Non-zero signed integer type.
+        #[n(3)]
+        NonZeroInt,
+        /* ---------------------------------------------------------------------- Floating Point */
+        /// Floating point type.
+        #[n(4)]
+        Float,
+    }
+
+    /// A minimal and extensible numeric type **descriptor** that specifies:
+    ///
+    /// 1. The numeric classification.
+    /// 2. Number of bytes used to encode the value.
+    ///
+    /// This type does **not** contain the actual numeric value; it is a lightweight descriptor for
+    /// numeric type information without holding values in memory. Each unique combination of `Kind`
+    /// and `bytes` corresponds to a specific Rust numeric primitive type.
+    #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+    pub(super) struct Number {
+        /// Classification of the numeric primitive type.
+        #[n(0)]
+        kind: Kind,
+        /// Number of bytes used to encode the value.
+        #[n(1)]
+        size: u8,
+    }
+
+    impl Number {
+        /// Returns the corresponding Rust primitive type for this numeric descriptor.
+        #[rustfmt::skip] // Keep match arms single-line for readability.
+        pub fn type_id(&self) -> TypeId {
+            match self {
+                Self { kind: Kind::UInt, size: 1 } => TypeId::of::<u8>(),
+                Self { kind: Kind::UInt, size: 2 } => TypeId::of::<u16>(),
+                Self { kind: Kind::UInt, size: 4 } => TypeId::of::<u32>(),
+                Self { kind: Kind::UInt, size: 8 } => TypeId::of::<u64>(),
+                Self { kind: Kind::Int, size: 1 } => TypeId::of::<i8>(),
+                Self { kind: Kind::Int, size: 2 } => TypeId::of::<i16>(),
+                Self { kind: Kind::Int, size: 4 } => TypeId::of::<i32>(),
+                Self { kind: Kind::Int, size: 8 } => TypeId::of::<i64>(),
+                Self { kind: Kind::Float, size: 4 } => TypeId::of::<f32>(),
+                Self { kind: Kind::Float, size: 8 } => TypeId::of::<f64>(),
+                _ => unreachable!("Unrecognised numeric type descriptor → {self:?}"),
+            }
+        }
+    }
+}
+
