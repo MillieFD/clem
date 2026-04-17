@@ -347,8 +347,19 @@ pub(crate) struct Graph {
     /// The [`ID`](NodeId) of the root node within the type [`Graph`].
     #[n(0)]
     root: NodeId,
-    /// Node [`IDs`](NodeId) mapped to [`Node`] descriptors.
+    /// [`Node`] descriptors keyed by unique [`NodeId`]
     #[n(1)]
     nodes: BTreeMap<NodeId, Node>,
+}
+
+impl Graph {
+    pub fn build<R: ser::Serialize>(value: &R) -> Result<Self, Error> {
+        let mut builder = Builder::default();
+        value.serialize(&mut builder)?;
+        Ok(Self {
+            root: 0,
+            nodes: builder.nodes,
+        })
+    }
 }
 
