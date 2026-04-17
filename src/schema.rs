@@ -363,3 +363,64 @@ impl Graph {
     }
 }
 
+/// A depth-first cursor-based stateful serializer used to build [`Graph`] instances.
+#[derive(Debug, Default, Clone)]
+struct Builder {
+    /// [`Node`] descriptors keyed by unique [`NodeId`]
+    nodes: BTreeMap<NodeId, Node>,
+    /// Next available [`NodeId`].
+    next: NodeId,
+    /// Cursor stack for nested traversal.
+    stack: Vec<Frame>,
+}
+
+impl Builder {
+    fn id_fetch_add(&mut self) -> NodeId {
+        let id = self.next;
+        self.next += 1;
+        id
+    }
+
+    fn push(&mut self, node: Node) -> NodeId {
+        let id = self.id_fetch_add();
+        self.nodes.insert(id, node);
+        id
+    }
+
+    fn enter(&mut self, node: Node) -> NodeId {
+        let frame = Frame {
+            segment: None,
+            optional: matches!(node, Node::Option { .. }),
+            path: self.stack.last().map_or(0, |f| f.path + 1),
+            next: 0,
+        };
+        let id = self.push(node);
+        self.stack.push(frame);
+        id
+    }
+
+    fn exit(&mut self) -> Option<Frame> {
+        self.stack.pop()
+    }
+
+    fn parent(&self) -> Option<&Frame> {
+        self.stack.last()
+    }
+}
+
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
+struct Frame {
+    /// Path component for the current node; used for leaf name generation.
+    ///
+    /// - `Some(f)` if the node is a named struct field, where `f` is the field name.
+    /// - `Some(i)` if the node is a tuple element, where `i` is the element index as a string.
+    /// - `None` if the node is unnamed e.g. sequence item.
+    segment: Option<String>,
+    /// `true` if the current node is inside a [`Node::Option`] parent.
+    optional: bool,
+    /// Previous path length; used to restore the previous path when exiting the current node.
+    path: usize,
+    /// Next available `index` for unnamed descendant nodes.
+    next: usize,
+}
+
