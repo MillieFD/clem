@@ -410,16 +410,16 @@ impl Builder {
 
 #[derive(Debug, Default, Clone, Eq, PartialEq)]
 struct Frame {
+    /// [`ID`](NodeId) of the parent node. `None` if the current node is the root node.
+    parent: Option<NodeId>,
     /// Path component for the current node; used for leaf name generation.
     ///
     /// - `Some(f)` if the node is a named struct field, where `f` is the field name.
     /// - `Some(i)` if the node is a tuple element, where `i` is the element index as a string.
     /// - `None` if the node is unnamed e.g. sequence item.
-    segment: Option<String>,
+    path: Option<String>,
     /// `true` if the current node is inside a [`Node::Option`] parent.
     optional: bool,
-    /// Previous path length; used to restore the previous path when exiting the current node.
-    path: usize,
     /// Next available `index` for unnamed descendant nodes.
     next: usize,
 }
