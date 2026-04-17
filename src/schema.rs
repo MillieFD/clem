@@ -140,6 +140,9 @@ use std::collections::BTreeMap;
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
+/// Unique node ID within the type graph.
+type NodeId = u32;
+
 /// A minimal type **descriptor** that provides a stable and extensible representation for
 /// platform-agnostic Rust primitives; used when walking the type graph for schema encoding.
 #[derive(Debug, Clone, Eq, Serialize, Deserialize, Encode, Decode)]
@@ -178,24 +181,24 @@ pub(crate) enum Node {
     /// Optional (nullable) value wrapping one subgraph.
     #[n(6)]
     Option {
-        /// Index of the subgraph root node within the type graph.
+        /// [`ID`](NodeId) of the subgraph root node within the type [`Graph`].
         #[n(0)]
-        subgraph: u32,
+        subgraph: NodeId,
     },
     /// Fixed size tuple wrapping an arbitrary number of subgraphs.
     #[n(7)]
     Tuple {
-        /// Index of each subgraph root node within the type graph.
+        /// [`ID`](NodeId) of each subgraph root node within the type graph.
         /// [`Vec::len`] returns the number of elements.
         #[n(0)]
-        subgraphs: Vec<u8>,
+        subgraphs: Vec<NodeId>,
     },
     /// Variable length sequence wrapping one subgraph.
     #[n(8)]
     Sequence {
-        /// Index of the subgraph root node within the type graph.
+        /// [`ID`](NodeId) of the subgraph root node within the type graph.
         #[n(0)]
-        subgraph: u32,
+        subgraph: NodeId,
     },
     /* -------------------------------------------------------------------- Algebraic Data Types */
     /// Named struct wrapping an arbitrary number of named fields; each described by a subgraph.
@@ -204,12 +207,12 @@ pub(crate) enum Node {
         /// Struct name.
         #[n(0)]
         name: String,
-        /// Field names mapped to subgraph root node indices within the type graph.
+        /// Field names mapped to subgraph root node [`IDs`](NodeId) within the type [`Graph`].
         ///
         /// [`Vec::len`] returns the number of fields. Field order in-memory is not guaranteed to
         /// match CBOR order on-disk.
         #[n(1)]
-        fields: BTreeMap<String, u32>,
+        fields: BTreeMap<String, NodeId>,
     },
     /// Named enum wrapping an arbitrary number of variants; each described by a subgraph.
     #[n(10)]
@@ -217,24 +220,24 @@ pub(crate) enum Node {
         /// Enum name.
         #[n(0)]
         name: String,
-        /// Variant names mapped to subgraph root node indices within the type graph.
+        /// Variant names mapped to subgraph root node [`IDs`](NodeId) within the type [`Graph`].
         ///
         /// Each variant class maps to a specific subgraph root node:
         ///
-        /// - Unit variant with no fields → `None` subgraph.
+        /// - Unit variant with no fields → `None` leaf node.
         /// - Tuple variant with unnamed fields → `Tuple` subgraph.
         /// - Struct variant with named fields → `Struct` subgraph.
         ///
         /// [`Vec::len`] returns the number of fields. Field order in-memory is not guaranteed to
         /// match CBOR order on-disk.
         #[n(1)]
-        variants: BTreeMap<String, u32>,
+        variants: BTreeMap<String, NodeId>,
     },
 }
 
 impl Node {
-    /// Returns `true` if `self` matches the `None` variant.
-    fn is_none(&self) -> bool {
+    /// Returns `true` if [`self`](Node) matches the [`Self::None`] variant.
+    pub fn is_none(&self) -> bool {
         matches!(self, Self::None)
     }
 }
@@ -330,5 +333,22 @@ mod number {
             }
         }
     }
+}
+
+/// A depth-first type graph constructed from nodes and edges.
+///
+/// Each [`Node`] is assigned a unique [`NodeId`]. Edges are represented implicitly by storing the
+/// [`NodeId`] of child nodes within each parent node, enabling efficient depth-first traversal
+/// decoupled from the physical in-memory or on-disk layout. A `root` node defines the entry point
+/// into the graph structure.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
+#[cbor(tag(101))]
+pub(crate) struct Graph {
+    /// The [`ID`](NodeId) of the root node within the type [`Graph`].
+    #[n(0)]
+    root: NodeId,
+    /// Node [`IDs`](NodeId) mapped to [`Node`] descriptors.
+    #[n(1)]
+    nodes: BTreeMap<NodeId, Node>,
 }
 
