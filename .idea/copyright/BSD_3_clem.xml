@@ -1,0 +1,6 @@
+<component name="CopyrightManager">
+  <copyright>
+    <option name="notice" value="Project: clem&#10;GitHub: https://github.com/MillieFD/clem&#10;&#10;BSD 3-Clause License, Copyright (c) &amp;#36;originalComment.match(&quot;Copyright \(c\) (\d+)&quot;, 1, &quot;-&quot;, &quot;&amp;#36;today.year&quot;)&amp;#36;today.year, Amelia Fraser-Dale&#10;&#10;Redistribution and use in source and binary forms, with or without&#10;modification, are permitted provided that the conditions of the LICENSE are met." />
+    <option name="myName" value="BSD-3-clem" />
+  </copyright>
+</component>
