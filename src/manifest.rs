@@ -128,7 +128,7 @@ pub(crate) struct Schema {
     /// Location of the schema segment including header.
     #[n(0)]
     pub sector: Sector,
-    /// Column descriptors keyed by name.
+    /// [`Column`] descriptors keyed by [`name`](String).
     #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub columns: BTreeMap<String, Column>,
