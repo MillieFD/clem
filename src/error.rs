@@ -37,7 +37,7 @@ pub enum Error {
     Decode(minicbor::decode::Error),
     /// File magic bytes did not match the expected `clem` signature.
     Magic,
-    /// File version not recognised by this build of [`clem`](crate).
+    /// File version is not recognised by this build of [`clem`](crate).
     Version(u8),
 }
 
