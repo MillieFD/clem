@@ -63,6 +63,28 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! outer offsets
 //! values
 //! ```
+//!
+//! Readers can directly query data from a named field – without reconstructing the full type – by
+//! reading only the required columnar data buffer. Each schema segment encodes **one** schema and
+//! each `clem` file requires at least **one** schema segment. Multimodality and schema evolution
+//! are achieved by appending additional schema segments.
+//!
+//! ### Schema Validation
+//!
+//! `Dataset::stream` compares the type graph root node name for `T` against the manifest
+//! `schemas: BTreeMap`; initialising a new stream with `schema: T` if no entry exists for the
+//! specified name or returning an error if the `T` type graph does not exactly match the existing
+//! schema structure.
+//!
+//! - An exact structural match is required for read and write validity via [`Stream`].
+//! - Subset-matches (projections) enable read-only access via [`SubStream`].
+//!
+//! This design ensures schema verification is performed exactly once. Stream read and write
+//! operations can then proceed fearlessly without per-request runtime checks on the hot path.
+//! Cloning an existing `Stream<T>` bypasses schema validation. Multi-consumer workloads should
+//! therefore prefer cloning a validated stream instead of calling `Dataset::stream` repeatedly.
+//! Implementers are encouraged to export canonical types for convenience, removing the need for
+//! users to reconstruct schema types manually.
 
 use minicbor::{Decode, Encode};
 use serde::{Deserialize, Serialize};
