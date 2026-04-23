@@ -273,7 +273,20 @@ mod number {
     use std::any::TypeId;
 
     /// Classification of the numeric primitive type.
-    #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+    #[derive(
+        Debug,
+        Copy,
+        Clone,
+        Eq,
+        PartialEq,
+        Ord,
+        PartialOrd,
+        Hash,
+        Serialize,
+        Deserialize,
+        Encode,
+        Decode,
+    )]
     #[non_exhaustive] // To accommodate the potential stabilisation of additional numeric classes.
     pub(super) enum Kind {
         /* ---------------------------------------------------------------------------- Unsigned */
@@ -304,7 +317,20 @@ mod number {
     /// This type does **not** contain the actual numeric value; it is a lightweight descriptor for
     /// numeric type information without holding values in memory. Each unique combination of `Kind`
     /// and `bytes` corresponds to a specific Rust numeric primitive type.
-    #[derive(Debug, Copy, Clone, Eq, PartialEq, Serialize, Deserialize, Encode, Decode)]
+    #[derive(
+        Debug,
+        Copy,
+        Clone,
+        Eq,
+        PartialEq,
+        Ord,
+        PartialOrd,
+        Hash,
+        Serialize,
+        Deserialize,
+        Encode,
+        Decode,
+    )]
     pub(super) struct Number {
         /// Classification of the numeric primitive type.
         #[n(0)]
