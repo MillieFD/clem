@@ -543,75 +543,266 @@ pub trait Unfold: Serialize {
     }
 }
 
-impl Graph {
-    pub fn build<R: ser::Serialize>(value: &R) -> Result<Self, Error> {
-        let mut builder = Builder::default();
-        value.serialize(&mut builder)?;
-        Ok(Self {
-            root: 0,
-            nodes: builder.nodes,
+/// A **schema builder** that can unfold the supported type `T`.
+///
+/// - Rust primitive types are unfolded directly into their corresponding [`Type`] descriptors.
+/// - Algebraic data types (structs and enums) are unfolded recursively into their component types.
+///
+/// `Unfolder` is implemented independently for each supported type; enabling type-driven encoding.
+/// For example, the default [`Schema`] builder folds `u8` into a [`Type::Number`] descriptor with
+/// `kind: number::Kind::UInt` and `size: 1`.
+pub trait Unfolder<T: ?Sized> {
+    /// The output type returned by [`unfold`] on success.
+    type Ok;
+    /// The error type returned by [`unfold`] on failure.
+    type Error;
+    /// Specific unfolding logic for the supported type `T`.
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error>;
+}
+
+/* ----------------------------------------------------------------------- Trait Implementations */
+
+impl Unfolder<bool> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::Bool)
+    }
+}
+
+impl Unfolder<char> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::Char)
+    }
+}
+
+impl Unfolder<u8> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::U8)
+    }
+}
+
+impl Unfolder<u16> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::U16)
+    }
+}
+
+impl Unfolder<u32> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::U32)
+    }
+}
+
+impl Unfolder<u64> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::U64)
+    }
+}
+
+impl Unfolder<u128> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::U128)
+    }
+}
+
+impl Unfolder<num::NonZeroU8> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZU8)
+    }
+}
+
+impl Unfolder<num::NonZeroU16> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZU16)
+    }
+}
+
+impl Unfolder<num::NonZeroU32> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZU32)
+    }
+}
+
+impl Unfolder<num::NonZeroU64> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZU64)
+    }
+}
+
+impl Unfolder<num::NonZeroU128> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZU128)
+    }
+}
+
+impl Unfolder<i8> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::I8)
+    }
+}
+
+impl Unfolder<i16> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::I16)
+    }
+}
+
+impl Unfolder<i32> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::I32)
+    }
+}
+
+impl Unfolder<i64> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::I64)
+    }
+}
+
+impl Unfolder<i128> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::I128)
+    }
+}
+
+impl Unfolder<num::NonZeroI8> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZI8)
+    }
+}
+
+impl Unfolder<num::NonZeroI16> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZI16)
+    }
+}
+
+impl Unfolder<num::NonZeroI32> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZI32)
+    }
+}
+
+impl Unfolder<num::NonZeroI64> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZI64)
+    }
+}
+
+impl Unfolder<num::NonZeroI128> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::NZI128)
+    }
+}
+
+impl Unfolder<f32> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::F32)
+    }
+}
+
+impl Unfolder<f64> for Schema {
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::F64)
+    }
+}
+
+impl<T: Unfold> Unfolder<Option<T>> for Schema
+where
+    Schema: Unfolder<T, Ok = Type>,
+{
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::Option {
+            subtype: T::with_unfolder(self)?.into(),
         })
     }
 }
 
-/// A depth-first cursor-based stateful serializer used to build [`Graph`] instances.
-#[derive(Debug, Default, Clone)]
-struct Builder {
-    /// [`Node`] descriptors keyed by unique [`NodeId`]
-    nodes: BTreeMap<NodeId, Node>,
-    /// Next available [`NodeId`].
-    next: NodeId,
-    /// Cursor stack for nested traversal.
-    stack: Vec<Frame>,
-}
-
-impl Builder {
-    fn id_fetch_add(&mut self) -> NodeId {
-        let id = self.next;
-        self.next += 1;
-        id
-    }
-
-    fn push(&mut self, node: Node) -> NodeId {
-        let id = self.id_fetch_add();
-        self.nodes.insert(id, node);
-        id
-    }
-
-    fn enter(&mut self, node: Node) -> NodeId {
-        let frame = Frame {
-            segment: None,
-            optional: matches!(node, Node::Option { .. }),
-            path: self.stack.last().map_or(0, |f| f.path + 1),
-            next: 0,
-        };
-        let id = self.push(node);
-        self.stack.push(frame);
-        id
-    }
-
-    fn exit(&mut self) -> Option<Frame> {
-        self.stack.pop()
-    }
-
-    fn parent(&self) -> Option<&Frame> {
-        self.stack.last()
+impl<T: Unfold> Unfolder<Vec<T>> for Schema
+where
+    Schema: Unfolder<T, Ok = Type>,
+{
+    type Ok = Type;
+    type Error = Infallible;
+    fn unfold(&mut self) -> Result<Self::Ok, Self::Error> {
+        Ok(Type::Sequence {
+            subtype: T::with_unfolder(self)?.into(),
+        })
     }
 }
 
-#[derive(Debug, Default, Clone, Eq, PartialEq)]
-struct Frame {
-    /// [`ID`](NodeId) of the parent node. `None` if the current node is the root node.
-    parent: Option<NodeId>,
-    /// Path component for the current node; used for leaf name generation.
-    ///
-    /// - `Some(f)` if the node is a named struct field, where `f` is the field name.
-    /// - `Some(i)` if the node is a tuple element, where `i` is the element index as a string.
-    /// - `None` if the node is unnamed e.g. sequence item.
-    path: Option<String>,
-    /// `true` if the current node is inside a [`Node::Option`] parent.
-    optional: bool,
-    /// Next available `index` for unnamed descendant nodes.
-    next: usize,
-}
-
+impl Unfold for bool {}
+impl Unfold for char {}
+impl Unfold for u8 {}
+impl Unfold for u16 {}
+impl Unfold for u32 {}
+impl Unfold for u64 {}
+impl Unfold for u128 {}
+impl Unfold for num::NonZeroU8 {}
+impl Unfold for num::NonZeroU16 {}
+impl Unfold for num::NonZeroU32 {}
+impl Unfold for num::NonZeroU64 {}
+impl Unfold for num::NonZeroU128 {}
+impl Unfold for i8 {}
+impl Unfold for i16 {}
+impl Unfold for i32 {}
+impl Unfold for i64 {}
+impl Unfold for i128 {}
+impl Unfold for num::NonZeroI8 {}
+impl Unfold for num::NonZeroI16 {}
+impl Unfold for num::NonZeroI32 {}
+impl Unfold for num::NonZeroI64 {}
+impl Unfold for num::NonZeroI128 {}
+impl Unfold for f32 {}
+impl Unfold for f64 {}
+impl<T: Unfold> Unfold for Option<T> {}
+impl<T: Unfold> Unfold for Vec<T> {}
