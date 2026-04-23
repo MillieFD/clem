@@ -8,47 +8,19 @@ Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the conditions of the LICENSE are met.
 */
 
-//! Type graph logic for schema generation and structural matching.
+//! Type unfolding logic for schema generation and validation.
 //!
 //! ---
 //!
-//! ### Arbitrary Type Encoding
+//! ### Unfolding Arbitrary Types
 //!
-//! `clem` understands **platform-agnostic** primitive types such as `u32` or `f64`.
+//! `clem` understands **platform-agnostic** primitive types such as `u32` or `f64` out of the box.
 //! Platform-dependent types such as `usize` are deliberately omitted to ensure file portability.
-//! Additional user-defined types are embedded directly in the schema using a depth-first
-//! cursor-based stateful serializer with no per-field allocation on the hot path.
+//! Arbitrary user-defined algebraic data types (structs and enums) are [unfolded](Unfold) into
+//! their primitive [components](Type).
 //!
 //! - **Leaf nodes** map to contiguous columnar data buffers via index.
 //! - **Internal nodes** exist purely for navigation and reconstruction.
-//!
-//! For example, `struct Outer { foo: Inner, bar: i32 }` and `struct Inner { baz: bool, quux:
-//! Option<f64> }` can be encoded as just three contiguous data buffers and one packed null bitmap
-//! arranged sequentially:
-//!
-//! ```text
-//! Outer
-//! ├─ foo: Inner
-//! │  ├─ baz: bool
-//! │  │  ╭─ Buffer 0 ─────────╮
-//! │  │  │ length: NonZeroU64 │
-//! │  │  │ payload: [u8]      │
-//! │  │  ╰────────────────────╯
-//! │  └─ quux: Option<f64>
-//! │     ╭─ Buffer 1 ─────────╮
-//! │     │ length: NonZeroU64 │
-//! │     │ bitmap: [u8]       │
-//! │     │ payload: [f64]     │
-//! │     ╰────────────────────╯
-//! └─ bar: i32
-//!    ╭─ Buffer 2 ─────────╮
-//!    │ length: NonZeroU64 │
-//!    │ payload: [i32]     │
-//!    ╰────────────────────╯
-//! ```
-//!
-//! The schema itself can be conceptualised as a `struct` where each column becomes a field with a
-//! `name` and `type`.
 //!
 //! ### Unsized Types
 //!
@@ -91,46 +63,6 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! outer offsets
 //! values
 //! ```
-//!
-//! ### Schema Segments
-//!
-//! To construct a [`Schema`], users must first define a `struct` which implements
-//! `serde::Serialize`. Each field becomes a column with a `name` and `type`. Each instance of the
-//! struct represents a row. This design moves schema validity checks to compile time by leveraging
-//! Rust's type safety, improving data ingestion speed by eliminating costly runtime schema checks.
-//! The type tree is serialized into CBOR; encoding the `name` and `type` of all internal and leaf
-//! nodes. The user schema struct (root node) defines the schema name which is encoded in the type
-//! tree and written to the file manifest `schemas: BTreeMap` to enable schema retrieval by name.
-//!
-//! ```text
-//! Schema Segment
-//! ├─ Header
-//! │  ├─ variant: u8
-//! │  └─ length: NonZeroU64
-//! └─ Payload: CBOR
-//! ```
-//!
-//! Readers can directly query data from arbitrary named fields – without reconstructing a type
-//! instance – by reading the corresponding columnar data buffer. Each schema segment encodes
-//! **one** schema and each `clem` file requires at least **one** schema segment. Multimodality and
-//! schema evolution are achieved by appending additional segments.
-//!
-//! ### 6.3 Schema Validation
-//!
-//! `Dataset::stream` compares the type graph root node name for `R` against the manifest
-//! `schemas: BTreeMap`; initialising a new stream with `schema: R` if no entry exists for the
-//! specified name or returning an error if the `R` type graph does not exactly match the existing
-//! schema structure.
-//!
-//! - An exact structural match is required for read and write validity via [`Stream`].
-//! - Subset-matches (projections) enable read-only access via [`SubStream`].
-//!
-//! This design ensures schema verification is performed exactly once. Stream read and write
-//! operations can then proceed fearlessly without per-request runtime checks on the hot path.
-//! Cloning an existing `Stream<R>` bypasses schema validation. Multi-consumer workloads should
-//! therefore prefer cloning a validated stream instead of calling `Dataset::stream` repeatedly.
-//! Implementers are encouraged to export canonical types for convenience, removing the need for
-//! users to reconstruct schema types manually.
 
 use crate::Error;
 use minicbor::{Decode, Encode};
