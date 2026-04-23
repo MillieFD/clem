@@ -64,145 +64,301 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! values
 //! ```
 
-use crate::Error;
 use minicbor::{Decode, Encode};
-use serde::{Deserialize, Serialize, ser};
-use std::any::Any;
-use std::collections::BTreeMap;
+use serde::{Deserialize, Serialize};
+use std::collections::btree_map::{BTreeMap, Entry, OccupiedEntry, VacantEntry};
+use std::convert::Infallible;
+use std::fmt::{Display, Formatter};
+use std::num;
+
+/// Shorthand occupied entry for a [`Column`] that already exists in the [`Schema`].
+type Occupied<'a> = OccupiedEntry<'a, &'static str, Column>;
+
+/// Shorthand vacant entry for a [`Column`] that does not yet exist in the [`Schema`].
+type Vacant<'a> = VacantEntry<'a, &'static str, Column>;
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
-/// Unique node ID within the type graph.
-type NodeId = u32;
+/// A minimal schema **builder** wrapping a [`BTreeMap`] of [`Column`] descriptors keyed by name.
+///
+/// This type does **not** contain the actual schema definition or columnar data buffers; it is a
+/// lightweight descriptor for segment initialisation without holding buffer contents in memory. An
+/// on-disk schema segment encodes the schema definition (column names and types) while
+/// on-disk data segments contain the columnar buffers.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Encode, Decode)]
+// NOTE: schema::Schema (public builder) ≠ manifest::Schema (private descriptor).
+pub struct Schema {
+    /// [`Column`] descriptors keyed by name.
+    ///
+    /// The [`BTreeMap`] guarantees a stable deterministic column order for consistent binary
+    /// encoding and schema comparison.
+    #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub columns: BTreeMap<&'static str, Column>,
+}
+
+impl Schema {
+    /// Initialises a new empty [`Schema`] with no columns.
+    pub fn new() -> Self {
+        Self {
+            columns: BTreeMap::new(),
+        }
+    }
+
+    /// Add a [`Column`] to [`self`](Schema) with the specified `name` and [`Type`].
+    pub fn column<T: Unfold>(mut self, name: &'static str) -> Result<Self, Error>
+    where
+        Schema: Unfolder<T, Ok = Type>,
+    {
+        let ty = T::with_unfolder(&mut self)?;
+        match self.columns.entry(name) {
+            Entry::Vacant(vacant) => Ok(self.vacant(vacant, ty)),
+            Entry::Occupied(occupied) => self.occupied(occupied, ty),
+        }
+    }
+
+    /// Insert a new [`Column`] into the [`Schema`] at the provided vacant entry.
+    fn vacant(mut self, vacant: Vacant, ty: Type) -> Self {
+        vacant.insert(Column { ty });
+        self // Return self to builder pattern
+    }
+
+    /// Resolve a [`Column`] name collision by comparing the associated metadata.
+    ///
+    /// - Returns `Ok(Self)` unaltered if the column definitions are identical.
+    /// - Returns `Err(Error::Collision)` if the column definitions differ.
+    fn occupied(mut self, occupied: Occupied, ty: Type) -> Result<Self, Error> {
+        match occupied.get().ty == ty {
+            // Idempotent column definition
+            true => Ok(self),
+            // Name collision with type mismatch
+            false => Error::collision(occupied, ty).into(),
+        }
+    }
+}
+
+/* ---------------------------------------------------------------------------- Schema Internals */
+
+/// A minimal column **descriptor** that wraps interpretation metadata necessary for random access
+/// and value [deserialization](Deserialize).
+///
+/// This type does **not** contain the actual buffer data; it is a lightweight descriptor for column
+/// discovery and access without holding buffer contents in memory. Data is stored via one or more
+/// on-disk data segments, each of which contains a buffer for this column.
+///
+/// [`Vec`] order in-memory is **not** guaranteed to reflect [`Sector`] order on-disk.
+#[derive(
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Encode, Decode,
+)]
+struct Column {
+    /// The [`Type`] of values contained within this column.
+    #[n(0)]
+    ty: Type,
+}
 
 /// A minimal type **descriptor** that provides a stable and extensible representation for
 /// platform-agnostic Rust primitives; used when walking the type graph for schema encoding.
-#[derive(Debug, Clone, Eq, Serialize, Deserialize, Encode, Decode)]
+#[derive(
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Encode, Decode, Hash,
+)]
 #[non_exhaustive] // To accommodate the potential future stabilisation of additional types.
-pub(crate) enum Node {
-    /* ------------------------------------------------------------ Zero-Size Machine Primitives */
-    /// No value.
-    ///
-    /// `None` is a zero-sized type (ZST) that exists only at the type level and occupies zero bytes
-    /// of hardware memory.
-    #[n(0)]
-    None,
-    /// Rust unit `()` primitive; used when no other meaningful type can be returned.
-    ///
-    /// `Unit` is a zero-sized type (ZST) that exists only at the type level and occupies zero bytes
-    /// of hardware memory.
-    #[n(1)]
-    Unit,
-    /// A sentinel type with no values, representing the result of computations that never complete.
-    ///
-    /// `Never` is a zero-sized type (ZST) that exists only at the type level and occupies zero
-    /// bytes of hardware memory.
-    #[n(2)]
-    Never,
+pub enum Type {
     /* ----------------------------------------------------------- Fixed-Size Machine Primitives */
-    /// Rust numeric primitives.
-    #[n(3)]
-    Number(#[n(0)] number::Number),
     /// Boolean primitive which can be `true` or `false`.
-    #[n(4)]
+    #[n(0)]
     Bool,
-    /* -------------------------------------------------------------------- Container Primitives */
+    /// [Unicode scalar value][1] representing a single character primitive.
+    ///
+    /// [1]: https://www.unicode.org/glossary/#unicode_scalar_value
+    #[n(1)]
+    Char,
+    /// Rust numeric primitives.
+    #[n(2)]
+    Number(#[n(0)] number::Number),
+    /* --------------------------------------------------------- Fixed Size Container Primitives */
+    /// Optional (nullable) value wrapping one subtype.
+    #[n(3)]
+    Option {
+        /// [`Type`] of the subtype root node.
+        #[n(0)]
+        subtype: Box<Type>,
+    },
+    /// Fixed size tuple wrapping an arbitrary number of subtypes.
+    #[n(4)]
+    Tuple {
+        /// [`Type`] of each subtype root node. [`Vec::len`] returns the number of elements.
+        #[n(0)]
+        subtypes: Vec<Type>,
+    },
+    /* ------------------------------------------------------------ Unsized Container Primitives */
     /// Variable length UTF-8 string encoded as a sequence of bytes.
     #[n(5)]
     String,
-    /// Optional (nullable) value wrapping one subgraph.
+    /// Variable length homogenous sequence wrapping one subtype.
     #[n(6)]
-    Option {
-        /// [`ID`](NodeId) of the subgraph root node within the type [`Graph`].
-        #[n(0)]
-        subgraph: NodeId,
-    },
-    /// Fixed size tuple wrapping an arbitrary number of subgraphs.
-    #[n(7)]
-    Tuple {
-        /// [`ID`](NodeId) of each subgraph root node within the type graph.
-        /// [`Vec::len`] returns the number of elements.
-        #[n(0)]
-        subgraphs: Vec<NodeId>,
-    },
-    /// Variable length sequence wrapping one subgraph.
-    #[n(8)]
     Sequence {
-        /// [`ID`](NodeId) of the subgraph root node within the type graph.
+        /// [`Type`] of the subtype root node.
         #[n(0)]
-        subgraph: NodeId,
-    },
-    /* -------------------------------------------------------------------- Algebraic Data Types */
-    /// Named struct wrapping an arbitrary number of named fields; each described by a subgraph.
-    #[n(9)]
-    Struct {
-        /// Struct name.
-        #[n(0)]
-        name: String,
-        /// Field names mapped to subgraph root node [`IDs`](NodeId) within the type [`Graph`].
-        ///
-        /// [`Vec::len`] returns the number of fields. Field order in-memory is not guaranteed to
-        /// match CBOR order on-disk.
-        #[n(1)]
-        fields: BTreeMap<String, NodeId>,
-    },
-    /// Named enum wrapping an arbitrary number of variants; each described by a subgraph.
-    #[n(10)]
-    Enum {
-        /// Enum name.
-        #[n(0)]
-        name: String,
-        /// Variant names mapped to subgraph root node [`IDs`](NodeId) within the type [`Graph`].
-        ///
-        /// Each variant class maps to a specific subgraph root node:
-        ///
-        /// - Unit variant with no fields → `None` leaf node.
-        /// - Tuple variant with unnamed fields → `Tuple` subgraph.
-        /// - Struct variant with named fields → `Struct` subgraph.
-        ///
-        /// [`Vec::len`] returns the number of fields. Field order in-memory is not guaranteed to
-        /// match CBOR order on-disk.
-        #[n(1)]
-        variants: BTreeMap<String, NodeId>,
+        subtype: Box<Type>,
     },
 }
 
-impl Node {
-    /// Returns `true` if [`self`](Node) matches the [`Self::None`] variant.
-    pub fn is_none(&self) -> bool {
-        matches!(self, Self::None)
-    }
-}
+impl Type {
+    /// A [`Type::Number`] descriptor for the `u8` primitive type.
+    pub const U8: Self = Self::Number(number::Number {
+        kind: number::Kind::UInt,
+        size: 1,
+    });
 
-/* ----------------------------------------------------------------------- Trait Implementations */
+    /// A [`Type::Number`] descriptor for the `u16` primitive type.
+    pub const U16: Self = Self::Number(number::Number {
+        kind: number::Kind::UInt,
+        size: 2,
+    });
 
-impl Default for Node {
-    fn default() -> Self {
-        Self::None
-    }
-}
+    /// A [`Type::Number`] descriptor for the `u32` primitive type.
+    pub const U32: Self = Self::Number(number::Number {
+        kind: number::Kind::UInt,
+        size: 4,
+    });
 
-impl PartialEq<Self> for Node {
-    fn eq(&self, other: &Self) -> bool {
-        self.type_id() == other.type_id()
+    /// A [`Type::Number`] descriptor for the `u64` primitive type.
+    pub const U64: Self = Self::Number(number::Number {
+        kind: number::Kind::UInt,
+        size: 8,
+    });
+
+    /// A [`Type::Number`] descriptor for the `u128` primitive type.
+    pub const U128: Self = Self::Number(number::Number {
+        kind: number::Kind::UInt,
+        size: 16,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroU8`](num::NonZeroU8) type.
+    pub const NZU8: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroUInt,
+        size: 1,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroU16`](num::NonZeroU16) type.
+    pub const NZU16: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroUInt,
+        size: 2,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroU32`](num::NonZeroU32) type.
+    pub const NZU32: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroUInt,
+        size: 4,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroU64`](num::NonZeroU64) type.
+    pub const NZU64: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroUInt,
+        size: 8,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroU128`](num::NonZeroU128) type.
+    pub const NZU128: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroUInt,
+        size: 16,
+    });
+
+    /// A [`Type::Number`] descriptor for the `i8` primitive type.
+    pub const I8: Self = Self::Number(number::Number {
+        kind: number::Kind::Int,
+        size: 1,
+    });
+
+    /// A [`Type::Number`] descriptor for the `i16` primitive type.
+    pub const I16: Self = Self::Number(number::Number {
+        kind: number::Kind::Int,
+        size: 2,
+    });
+
+    /// A [`Type::Number`] descriptor for the `i32` primitive type.
+    pub const I32: Self = Self::Number(number::Number {
+        kind: number::Kind::Int,
+        size: 4,
+    });
+
+    /// A [`Type::Number`] descriptor for the `i64` primitive type.
+    pub const I64: Self = Self::Number(number::Number {
+        kind: number::Kind::Int,
+        size: 8,
+    });
+
+    /// A [`Type::Number`] descriptor for the `i128` primitive type.
+    pub const I128: Self = Self::Number(number::Number {
+        kind: number::Kind::Int,
+        size: 16,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroI8`](num::NonZeroI8) type.
+    pub const NZI8: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroInt,
+        size: 1,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroI16`](num::NonZeroI16) type.
+    pub const NZI16: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroInt,
+        size: 2,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroI32`](num::NonZeroI32) type.
+    pub const NZI32: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroInt,
+        size: 4,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroI64`](num::NonZeroI64) type.
+    pub const NZI64: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroInt,
+        size: 8,
+    });
+
+    /// A [`Number`](number::Number) descriptor for the [`NonZeroI128`](num::NonZeroI128) type.
+    pub const NZI128: Self = Self::Number(number::Number {
+        kind: number::Kind::NonZeroInt,
+        size: 16,
+    });
+
+    /// A [`Type::Number`] descriptor for the `f32` primitive type.
+    pub const F32: Self = Self::Number(number::Number {
+        kind: number::Kind::Float,
+        size: 4,
+    });
+
+    /// A [`Type::Number`] descriptor for the `f64` primitive type.
+    pub const F64: Self = Self::Number(number::Number {
+        kind: number::Kind::Float,
+        size: 8,
+    });
+
+    /// Constructor for [`Type::Option`] wrapping the provided subtype.
+    pub fn option(subtype: Self) -> Self {
+        Self::Option {
+            subtype: Box::new(subtype),
+        }
     }
 }
 
 mod number {
-    //! Private module provides a minimal stable numeric type **descriptor** for Rust primitives.
+    //! This module provides a minimal stable type **descriptor** for Rust numeric primitives.
     //!
     //! Defining a distinct enum variant for each fixed-width machine primitive type is fragile; as
     //! Rust stabilises new types – such as [`f16`][1] – new enum variants will need to be added,
     //! which may break backwards compatibility and binary encoding.
     //!
     //! Instead, this module defines an extensible [`Number`] descriptor to encode arbitrary numeric
-    //! types via a combination of 'kind' and 'size' fields.
+    //! types via a combination of [kind](Kind) and [size](size_of) fields.
     //!
     //! [1]: https://rust-lang.github.io/rfcs/3453-f16-and-f128.html
 
     use minicbor::{Decode, Encode};
     use serde::{Deserialize, Serialize};
-    use std::any::TypeId;
+    use std::fmt::{Display, Formatter};
 
     /// Classification of the numeric primitive type.
     #[derive(
@@ -225,14 +381,14 @@ mod number {
         /// Unsigned integer type.
         #[n(0)]
         UInt,
-        /// Non-zero unsigned integer type.
+        /// [Non-zero](std::num::NonZero) unsigned integer type.
         #[n(1)]
         NonZeroUInt,
         /* ------------------------------------------------------------------------------ Signed */
         /// Signed integer type.
         #[n(2)]
         Int,
-        /// Non-zero signed integer type.
+        /// [Non-zero](std::num::NonZero) signed integer type.
         #[n(3)]
         NonZeroInt,
         /* ---------------------------------------------------------------------- Floating Point */
@@ -241,9 +397,21 @@ mod number {
         Float,
     }
 
+    impl Display for Kind {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Self::UInt => f.write_str("u"),
+                Self::NonZeroUInt => f.write_str("NonZeroU"),
+                Self::Int => f.write_str("i"),
+                Self::NonZeroInt => f.write_str("NonZeroI"),
+                Self::Float => f.write_str("f"),
+            }
+        }
+    }
+
     /// A minimal and extensible numeric type **descriptor** that specifies:
     ///
-    /// 1. The numeric classification.
+    /// 1. The numeric [classification](Kind).
     /// 2. Number of bytes used to encode the value.
     ///
     /// This type does **not** contain the actual numeric value; it is a lightweight descriptor for
@@ -266,48 +434,113 @@ mod number {
     pub(super) struct Number {
         /// Classification of the numeric primitive type.
         #[n(0)]
-        kind: Kind,
+        pub kind: Kind,
         /// Number of bytes used to encode the value.
         #[n(1)]
-        size: u8,
+        pub size: u8,
     }
 
-    impl Number {
-        /// Returns the corresponding Rust primitive type for this numeric descriptor.
-        #[rustfmt::skip] // Keep match arms single-line for readability.
-        pub fn type_id(&self) -> TypeId {
-            match self {
-                Self { kind: Kind::UInt, size: 1 } => TypeId::of::<u8>(),
-                Self { kind: Kind::UInt, size: 2 } => TypeId::of::<u16>(),
-                Self { kind: Kind::UInt, size: 4 } => TypeId::of::<u32>(),
-                Self { kind: Kind::UInt, size: 8 } => TypeId::of::<u64>(),
-                Self { kind: Kind::Int, size: 1 } => TypeId::of::<i8>(),
-                Self { kind: Kind::Int, size: 2 } => TypeId::of::<i16>(),
-                Self { kind: Kind::Int, size: 4 } => TypeId::of::<i32>(),
-                Self { kind: Kind::Int, size: 8 } => TypeId::of::<i64>(),
-                Self { kind: Kind::Float, size: 4 } => TypeId::of::<f32>(),
-                Self { kind: Kind::Float, size: 8 } => TypeId::of::<f64>(),
-                _ => unreachable!("Unrecognised numeric type descriptor → {self:?}"),
-            }
+    impl Display for Number {
+        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}{}", self.kind, self.size * 8)
         }
     }
 }
 
-/// A depth-first type graph constructed from nodes and edges.
+/* ------------------------------------------------------------------------------ Specific Error */
+
+/// Errors returned by [`Schema`] composition.
 ///
-/// Each [`Node`] is assigned a unique [`NodeId`]. Edges are represented implicitly by storing the
-/// [`NodeId`] of child nodes within each parent node, enabling efficient depth-first traversal
-/// decoupled from the physical in-memory or on-disk layout. A `root` node defines the entry point
-/// into the graph structure.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Encode, Decode)]
-#[cbor(tag(101))]
-pub(crate) struct Graph {
-    /// The [`ID`](NodeId) of the root node within the type [`Graph`].
-    #[n(0)]
-    root: NodeId,
-    /// [`Node`] descriptors keyed by unique [`NodeId`]
-    #[n(1)]
-    nodes: BTreeMap<NodeId, Node>,
+/// Enum variants cover various granular error cases that may arise when working with schemas.
+/// Users should consider handling errors explicitly wherever possible to provide meaningful error
+/// messages and recovery actions.
+///
+/// ### Implementation
+///
+/// This enum is `#[non_exhaustive]` meaning additional variants may be added in future versions.
+/// Implementers are advised to include a wildcard arm `_` to account for potential additions.
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+#[non_exhaustive] // To accommodate potential future error cases.
+pub enum Error {
+    /// A [`Column`] with the same [name](String) but a different [type](Type) already exists in
+    /// the [`Schema`].
+    ///
+    /// Each schema stores columns in a [`BTreeMap`] keyed by column name. Reusing an existing
+    /// name therefore overwrites the existing column definition, resulting in possible data loss.
+    Collision {
+        /// Name shared by the new and existing columns.
+        name: &'static str,
+        /// [`Type`] of the existing [`Column`] in the [`Schema`].
+        ty1: Type,
+        /// [`Type`] of the new [`Column`] being added to the [`Schema`].
+        ty2: Type,
+    },
+    /// The requested type is not supported by this version of [`clem`](crate).
+    ///
+    /// Some types are deliberately omitted. Please read the [type documentation](Type) for more
+    /// details. If you think a type should be supported, please open a new GitHub feature request
+    /// with your use case and justification for inclusion.
+    Unsupported(&'static str),
+}
+
+impl Error {
+    /// Returns a new [`Error::Collision`] variant wrapping the column name and conflicting types.
+    fn collision(occupied: Occupied, new: Type) -> Self {
+        Self::Collision {
+            name: occupied.key().clone(),
+            ty1: occupied.get().ty,
+            ty2: new,
+        }
+    }
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Collision { name, ty1, ty2 } => write!(
+                f,
+                "Column collision while building schema:\n\t\
+                Tried to add column {{ name: {name}, type {ty1:?} }}\n\t\
+                Found existing column {{ name: {name}, type {ty2:?} }}
+                "
+            ),
+            Self::Unsupported(msg) => write!(f, "Unsupported type → {msg}"),
+        }
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl<T, E> From<Error> for Result<T, E>
+where
+    E: From<Error>,
+{
+    fn from(error: Error) -> Self {
+        Err(E::from(error))
+    }
+}
+
+/* --------------------------------------------------------------------------- Composition Trait */
+
+/// A platform-agnostic **type** that can be unfolded into its primitive [components](Type) using
+/// an [`Unfolder`].
+///
+/// [`Clem`](crate) provides `Unfold` implementations for many Rust primitive and standard library
+/// types. The complete list is [here](crate::schema). All of these types can be unfolded using clem
+/// out of the box. Some types are deliberately omitted to preserve cross-platform support.
+///
+/// Clem provides the [`#[derive(unfold)]`][1] procedural macro to automatically generate `Unfold`
+/// implementations for structs and enums in your program. See the [user guide][2] for more details.
+///
+/// Third-party crates are encouraged to implement `Unfold` on their public types to enable seamless
+/// integration with on-disk storage.
+// TODO [1] link to procedural macro documentation
+// TODO [2] link to procedural macro user guide
+pub trait Unfold: Serialize {
+    /// Delegates to [`Unfolder::unfold`] on the provided [`Unfolder`].
+    fn with_unfolder<Cmp: Unfolder<Self>>(unfolder: &mut Cmp) -> Result<Cmp::Ok, Cmp::Error> {
+        unfolder.unfold()
+    }
 }
 
 impl Graph {
