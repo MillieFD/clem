@@ -9,6 +9,12 @@ repository = "https://github.com/MillieFD/clem"
 
 # See a full list of keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[cargo.clippy]
+missing_const_for_fn = "deny"
+unwrap_used = "deny"
+
+# See a full list of keys and their definitions at https://rust-lang.github.io/rust-clippy/stable/index.html
+
 [dependencies]
 smol = "2.0"
 memmap2 = "0.9"
