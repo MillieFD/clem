@@ -181,7 +181,7 @@ struct Column {
 /// A minimal type **descriptor** that provides a stable and extensible representation for
 /// platform-agnostic Rust primitives; used when walking the type graph for schema encoding.
 #[derive(
-    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize, Encode, Decode, Hash,
+    Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize, Encode, Decode,
 )]
 #[non_exhaustive] // To accommodate the potential future stabilisation of additional types.
 pub enum Type {
