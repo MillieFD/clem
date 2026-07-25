@@ -288,12 +288,12 @@ impl From<Type> for Column {
 /// discovery and access without holding buffer contents in memory. Data is stored via contiguous
 /// buffers distributed across one or more on-disk data segments.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, CborLen)]
-#[doc(hidden)] // Reachable through Accumulate::buffers for the #[derive(Data)] macro.
+#[derive(Debug, Clone, Eq, Encode, Decode, CborLen)]
+#[doc(hidden)] // reachable through Accumulate::buffers for the #[derive(Data)] macro.
 pub enum Buffer {
     /// A compact buffer containing exactly **one** item repeated `count` times.
     #[n(0)]
-    #[non_exhaustive] // rejects external struct literal construction
+    #[non_exhaustive] // reject external struct literal construction
     Compact {
         /// Location of the [`Buffer`] on disk.
         ///
@@ -310,7 +310,7 @@ pub enum Buffer {
     },
     /// A buffer containing **more than one** distinct item with no orderable statistics.
     #[n(1)]
-    #[non_exhaustive] // rejects external struct literal construction
+    #[non_exhaustive] // reject external struct literal construction
     Basic {
         /// Location of the [`Buffer`] on disk.
         ///
@@ -327,7 +327,7 @@ pub enum Buffer {
     },
     /// A buffer containing **more than one** distinct [`PartialOrd`] item.
     #[n(2)]
-    #[non_exhaustive] // rejects external struct literal construction
+    #[non_exhaustive] // reject external struct literal construction
     Detailed {
         /// Location of the [`Buffer`] on disk.
         ///
@@ -354,6 +354,34 @@ pub enum Buffer {
         #[n(3)]
         max: Sector,
     },
+}
+
+impl Ord for Buffer {
+    fn cmp(&self, other: &Self) -> Ordering {
+        let s = other.sector();
+        self.sector().cmp(s)
+    }
+}
+
+impl PartialOrd for Buffer {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        self.cmp(other).into()
+    }
+}
+
+impl PartialEq for Buffer {
+    fn eq(&self, other: &Self) -> bool {
+        self.sector() == other.sector()
+    }
+}
+
+impl Hash for Buffer {
+    fn hash<H>(&self, state: &mut H)
+    where
+        H: Hasher,
+    {
+        self.sector().hash(state);
+    }
 }
 
 impl Buffer {
