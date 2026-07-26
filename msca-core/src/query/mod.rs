@@ -642,6 +642,10 @@ pub mod column {
         }
 
         fn stream(&self) -> Result<impl Iterator<Item = Outcome<S::Item>>, Error> {
+            Ok(Filter {
+                source: self.source.stream()?,
+                filter: &self.filter,
+            })
         }
 
         fn retain<B, G, I>(&mut self, bounds: &[B], test: &G) -> Result<&mut Self, Error>
