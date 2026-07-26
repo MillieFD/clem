@@ -520,8 +520,8 @@ pub mod column {
         pub query: &'q Query,
         /// The name of the [`Column`] over which this [`Src`] iterates.
         pub name: &'q str,
-        /// Candidate [`Buffer`] collection used for targeted [`IO`](io).
-        pub buffers: Vec<Buffer>,
+        /// Candidate [`Buffer`] descriptors keyed by [`Segment`](crate::segment::Segment) ordinal.
+        pub buffers: BTreeMap<usize, Buffer>,
         /// Type-state carrier for the requested [`item`](I) type.
         item: PhantomData<I>,
     }
