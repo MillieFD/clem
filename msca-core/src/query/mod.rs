@@ -633,7 +633,7 @@ pub mod column {
     {
         type Item = S::Item;
 
-        fn root<'a>(&'a self) -> &'a Root<'a, S::Item> {
+        fn root(&self) -> &Src<S::Item> {
             self.source.root()
         }
 
