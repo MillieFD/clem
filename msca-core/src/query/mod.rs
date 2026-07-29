@@ -199,7 +199,7 @@ impl Query {
             .ok_or_else(|| Error::Column { name: name.into() })?
             .exact::<I>()?
             .buffers
-            .iter();
+            .values();
         let src = stream::Root::new(buffers, &self.mmap);
         let items = src.stream()?.map(Outcome::from);
         Ok(items)
