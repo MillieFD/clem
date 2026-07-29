@@ -154,7 +154,7 @@ impl Query {
     {
         if let Some(entry) = self.columns.get_key_value(name) {
             let buffers = entry.1.exact::<I>()?.buffers.clone();
-            let column = column::Root::new(self, entry.0, buffers);
+            let column = column::Src::new(self, entry.0, buffers);
             Ok(column)
         } else {
             Error::Column { name: name.into() }.into()
