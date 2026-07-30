@@ -171,9 +171,7 @@ impl Query {
     /// ### Errors
     ///
     /// Returns [`Error::Io`] if an error occurs during file [`IO`](io) or item deserialization.
-    ///
-    /// [1]: crate::segment::Segment
-    pub fn item<I>(mut self, index: u64) -> Result<Option<I>, Error>
+    pub fn nth<I>(mut self, n: usize) -> Result<Option<I>, Error>
     where
         I: Read + 'static,
         for<'a> I::Src<'a>: Composite<'a, Self> + Iterator<Item = Outcome<I>> + 'a,
