@@ -212,13 +212,11 @@ impl Query {
     }
 
     /// Returns the total number of on-disk items for this [`Schema`] across all [segments][1]; the
-    /// sum of [`Buffer`] `count` fields for one [`Column`].
+    /// sum of [`Buffer::count`] for one [`Column`].
     ///
     /// [1]: crate::segment::Segment
     pub fn count(&self) -> u64 {
-        let first = self.columns.values().next();
-        let buffers = first.into_iter().flat_map(|column| column.buffers.iter());
-        buffers.map(Buffer::count).sum()
+        self.columns.values().next().map(Column::count).unwrap_or_default()
     }
 }
 
