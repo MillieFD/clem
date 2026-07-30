@@ -293,14 +293,14 @@ where
 pub struct Column {
     /// The [`Type`] of items contained within this [`Column`].
     #[n(0)]
-    pub ty: Type,
-    /// [`Buffer`] descriptors for the [`Column`] across all data segments.
-    #[cbor(n(1), skip_if = "Vec::is_empty")]
+    pub(crate) ty: Type,
+    /// [`Buffer`] descriptors keyed by segment ordinal.
+    #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
     #[cfg_attr(
         feature = "serde",
-        serde(default, skip_serializing_if = "Vec::is_empty")
+        serde(default, skip_serializing_if = "BTreeMap::is_empty")
     )]
-    pub(crate) buffers: Vec<Buffer>,
+    pub(crate) buffers: BTreeMap<usize, Buffer>,
 }
 
 impl Column {
