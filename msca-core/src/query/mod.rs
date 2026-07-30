@@ -222,6 +222,20 @@ impl Query {
     }
 }
 
+impl PartialEq for Query {
+    /// Returns `true` if two queries:
+    ///
+    /// 1. Read the same memory map [`Arc`] pointer.
+    /// 2. Expose the same [`Schema`].
+    ///
+    /// Read the [trait documentation](PartialEq) for more details.
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.mmap, &other.mmap) && self.columns == other.columns
+    }
+}
+
+impl Eq for Query {}
+
 /// The result of **combining** two data sources.
 ///
 /// `Join` is itself a data source over the two inner sources, enabling the construction of nested
