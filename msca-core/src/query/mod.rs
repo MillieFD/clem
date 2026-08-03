@@ -208,7 +208,7 @@ impl<'m> Query<'m> {
     }
 
     /// Returns the total number of on-disk items for this [`Schema`] across all [segments][1]; the
-    /// sum of [`Buffer::count`] for one [`Column`].
+    /// sum of [`Buffer::count`] for one [`Column`](manifest::Column).
     ///
     /// [1]: crate::segment::Segment
     pub fn count(&self) -> u64 {
