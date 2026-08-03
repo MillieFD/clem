@@ -352,20 +352,15 @@ impl Column {
         }
     }
 
-    /// Returns [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`]
-    /// type **or** nested inner subtype; otherwise returns a mutable reference to [`self`](Column)
-    /// for method chaining.
+    /// Retains only the [buffers](Buffer) from `self` that are also present in `other`.
     ///
-    /// ### Guidance
+    /// ### Implementation
     ///
-    /// Refer to [`Type::exact`] if a direct non-nested match is required. Use [`Column::accepts`]
-    /// if an immutable reference is required for downstream functions.
-    pub fn accepts_mut<I>(&mut self) -> Result<&mut Self, Error>
-    where
-        Schema: Unfolder<I>,
-    {
-        self.accepts()?;
-        Ok(self)
+    /// Delegates to [`BTreeMap::retain`] internally. Each execution costs one traversal and never
+    /// allocates.
+    fn retain(&mut self, other: &Self) {
+        #[allow(unused_variables)]
+        self.buffers.retain(|seg, buf| other.buffers.contains_key(seg));
     }
 
     /// Skip the fist `n` items.
