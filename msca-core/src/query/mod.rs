@@ -178,13 +178,7 @@ impl<'m> Query<'m> {
         I: Read + 'q,
         I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
     {
-        let skip = self
-            .columns
-            .values_mut()
-            .map(|col| Buffer::skip(&mut col.buffers, index))
-            .last()
-            .unwrap_or_default() as usize;
-        self.read::<I>()?.nth(skip).transpose().map_err(Error::from)
+        self.read::<I>()?.nth(n).transpose().map_err(Error::from)
     }
 
     pub fn stream<'q, I>(&'q self, name: &str) -> Result<impl Iterator<Item = Outcome<I>>, Error>
