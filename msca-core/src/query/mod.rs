@@ -83,7 +83,7 @@ pub struct Query<'m> {
     pub(crate) columns: BTreeMap<&'m str, &'m manifest::Column>,
 }
 
-impl Query {
+impl<'m> Query<'m> {
     /// Map each **distinct** [item](I) to the corresponding on-disk [index](N).
     ///
     /// The [`Dataset`][1] is read in ascending insertion order; items record their first index and
@@ -99,7 +99,7 @@ impl Query {
     where
         N: Unsigned,
         I: Read + Eq + Hash + 'static,
-        for<'q> I::Src<'q>: Composite<'q, Query> + Iterator<Item = Outcome<I>> + 'q,
+        for<'q> I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
     {
         let iter = self.read::<I>()?;
         Self::intern(iter)
@@ -174,10 +174,10 @@ impl Query {
     /// ### Errors
     ///
     /// Returns [`Error::Io`] if an error occurs during file [`IO`](io) or item deserialization.
-    pub fn nth<I>(mut self, n: usize) -> Result<Option<I>, Error>
+    pub fn nth<'q, I>(&'q self, n: usize) -> Result<Option<I>, Error>
     where
-        I: Read + 'static,
-        for<'a> I::Src<'a>: Composite<'a, Self> + Iterator<Item = Outcome<I>> + 'a,
+        I: Read + 'q,
+        I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
     {
         let skip = self
             .columns
@@ -209,7 +209,7 @@ impl Query {
     pub fn read<'q, I>(&'q self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'q, Error>
     where
         I: Read + 'q,
-        I::Src<'q>: Composite<'q, Self> + Iterator<Item = Outcome<I>> + 'q,
+        I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
     {
         I::Src::new(self).map(Resolve::resolve)
     }
@@ -223,7 +223,7 @@ impl Query {
     }
 }
 
-impl PartialEq for Query {
+impl<'m> PartialEq for Query<'m> {
     /// Returns `true` if two queries:
     ///
     /// 1. Read the same memory map [`Arc`] pointer.
@@ -235,7 +235,7 @@ impl PartialEq for Query {
     }
 }
 
-impl Eq for Query {}
+impl<'m> Eq for Query<'m> {}
 
 /// The result of **combining** two data sources.
 ///
