@@ -166,7 +166,7 @@ impl<'m> Query<'m> {
     /// Returns the `n`th item of the query.
     ///
     /// Like most indexing operations, the count starts from zero, so `nth(0)` returns the first
-    /// value, `nth(1)` the second, and so on.
+    /// item, `nth(1)` the second, and so on.
     ///
     /// Returns [`None`] if `n` exceeds the number of on-disk items written for the [`Schema`].
     ///
