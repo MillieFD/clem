@@ -286,7 +286,8 @@ where
 
 /// A minimal column **descriptor** for [`Query`] planning and execution.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Eq, PartialEq, Encode, Decode, CborLen)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, CborLen)]
+#[doc(hidden)] // reachable through Adapter::column for the #[derive(Read)] macro.
 pub struct Column {
     /// The [`Type`] of items contained within this [`Column`].
     #[n(0)]
