@@ -352,7 +352,7 @@ impl Column {
         }
     }
 
-    /// Retains only the [buffers](Buffer) from `self` that are also present in `other`.
+    /// Retain only the [buffers](Buffer) in `self` from [segments][1] that also appear in `other`.
     ///
     /// ### Implementation
     ///
