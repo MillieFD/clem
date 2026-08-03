@@ -29,7 +29,7 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //!     .query("schema_name")?
 //!     .column::<f64>("temperature")?
 //!     .range(35.0..)?
-//!     .read();
+//!     .iter();
 //! ```
 //!
 //! Items are deserialized exactly once when the lazy [`Iterator`] returned by a terminal method is
@@ -59,7 +59,7 @@ use crate::schema::{Schema, Type, Unfolder, number};
 /* ------------------------------------------------------------------------------ Public Exports */
 
 /// A composable query interface to [read](Read) data from any [msca](crate) file; initialised from
-/// [`Dataset::query`][1] and executed lazily when [`read`](Self::read) is iterated.
+/// [`Dataset::query`][1] and executed lazily when [`iter`](Self::iter) is polled.
 ///
 /// [`Query`] also provides a [`Column`](column::Column) factory for the specified [`Schema`].
 ///
@@ -101,7 +101,7 @@ impl<'m> Query<'m> {
         I: Read + Eq + Hash + 'static,
         for<'q> I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
     {
-        let iter = self.read::<I>()?;
+        let iter = self.iter::<I>()?;
         Self::intern(iter)
     }
 
@@ -178,10 +178,11 @@ impl<'m> Query<'m> {
         I: Read + 'q,
         I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
     {
-        self.read::<I>()?.nth(n).transpose().map_err(Error::from)
+        self.iter::<I>()?.nth(n).transpose().map_err(Error::from)
     }
 
-    /// Return an [`Iterator`] yielding [`deserialized`][1] items from the named [`Column`].
+    /// Return an [`Iterator`] yielding one [`Outcome`] per [deserialized][1] item from the named
+    /// [`Column`].
     ///
     /// The requested [`Type`] is verified against the on-disk [`Column`] type exactly once.
     /// Subsequent deserialization can progress fearlessly without additional runtime checks.
@@ -192,8 +193,12 @@ impl<'m> Query<'m> {
     /// - [`Error::Type`] if the requested [`Type`] is incompatible with the on-disk column type.
     /// - [`Error::Io`] if a per-buffer source cannot be constructed from the memory map.
     ///
+    /// Refer to [`Query::iter`] for a [resolved](Resolve) alternative that yields only
+    /// [included](Outcome::Include) items by automatically re-polling the iterator following an
+    /// [excluded](Outcome::Exclude) item.
+    ///
     /// [1]: Deserialize::deserialize
-    pub fn stream<'q, I>(&'q self, name: &str) -> Result<impl Iterator<Item = Outcome<I>>, Error>
+    pub fn read<'q, I>(&'q self, name: &str) -> Result<impl Iterator<Item = Outcome<I>>, Error>
     where
         I: Read + Clone + 'q,
         I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
@@ -206,22 +211,25 @@ impl<'m> Query<'m> {
             .exact::<I>()?
             .buffers
             .iter();
-        let items = stream::Src::new(buffers, &self.mmap).stream()?.map(Outcome::from);
+        let items = stream::Src::new(buffers, &self.mmap).iter()?.map(Outcome::from);
         Ok(items)
     }
 
     /// Returns an [`Iterator`] over [`deserialized`][1] composite [`items`](I) across every column.
+    ///
+    /// The returned iterator **only** yields [included](Outcome::Include) items by automatically
+    /// re-polling the source following an [excluded](Outcome::Exclude) item. An empty column with
+    /// no [buffers](Buffer) returns an empty [`Iterator`] that yields [`None`] immediately.
     ///
     /// ### Errors
     ///
     /// - [`Error::Column`] if a column named by the composite [`I`] is absent from the schema.
     /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`] type.
     ///
-    /// An empty column with no [buffers](Buffer) returns an empty [`Iterator`] that yields [`None`]
-    /// immediately when polled.
+    /// Refer to [`Query::read`] for a non-resolved alternative that yields [`Outcome`].
     ///
     /// [1]: Deserialize::deserialize
-    pub fn read<'q, I>(&'q self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'q, Error>
+    pub fn iter<'q, I>(&'q self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'q, Error>
     where
         I: Read + 'q,
         I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
@@ -304,7 +312,7 @@ where
     ///
     /// [1]: Deserialize::deserialize
     /// [2]: column::Join
-    pub fn read<'a, I>(&'a self) -> Result<impl Iterator<Item = Result<I, io::Error>>, Error>
+    pub fn iter<'a, I>(&'a self) -> Result<impl Iterator<Item = Result<I, io::Error>>, Error>
     where
         I: Read + 'a,
         I::Src<'a>: Composite<'a, Self> + Iterator<Item = Outcome<I>> + 'a,
@@ -340,7 +348,7 @@ where
 /// let altitudes = query.column::<f64>("altitude")?.range(500.0..)?;
 ///
 /// // Step 3: Join the filtered columns. Read the number of surviving items.
-/// let count = sensors.and(altitudes)?.unpack().0.read()?.count();
+/// let count = sensors.and(altitudes)?.unpack().0.iter()?.count();
 /// # Ok(count)
 /// # }
 /// ```
