@@ -205,9 +205,8 @@ impl<'m> Query<'m> {
             .ok_or_else(|| Error::Column { name: name.into() })?
             .exact::<I>()?
             .buffers
-            .values();
-        let src = stream::Root::new(buffers, &self.mmap);
-        let items = src.stream()?.map(Outcome::from);
+            .iter();
+        let items = stream::Src::new(buffers, &self.mmap).stream()?.map(Outcome::from);
         Ok(items)
     }
 
