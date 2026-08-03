@@ -217,8 +217,8 @@ impl<'m> Query<'m> {
     /// - [`Error::Column`] if a column named by the composite [`I`] is absent from the schema.
     /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`] type.
     ///
-    /// A composite read against an empty column map reports [`Error::Column`] naming the first
-    /// absent field rather than yielding an empty [`Iterator`].
+    /// An empty column with no [buffers](Buffer) returns an empty [`Iterator`] that yields [`None`]
+    /// immediately when polled.
     ///
     /// [1]: Deserialize::deserialize
     pub fn read<'q, I>(&'q self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'q, Error>
@@ -226,7 +226,14 @@ impl<'m> Query<'m> {
         I: Read + 'q,
         I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
     {
-        I::Src::new(self).map(Resolve::resolve)
+        let iter = match self.columns.is_empty() {
+            true => None,
+            false => I::Src::new(self)?.into(),
+        }
+        .into_iter()
+        .flatten()
+        .resolve();
+        Ok(iter)
     }
 
     /// Returns the total number of on-disk items for this [`Schema`] across all [segments][1]; the
