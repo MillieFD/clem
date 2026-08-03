@@ -210,6 +210,17 @@ impl<'m> Query<'m> {
         Ok(items)
     }
 
+    /// Returns an [`Iterator`] over [`deserialized`][1] composite [`items`](I) across every column.
+    ///
+    /// ### Errors
+    ///
+    /// - [`Error::Column`] if a column named by the composite [`I`] is absent from the schema.
+    /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`] type.
+    ///
+    /// A composite read against an empty column map reports [`Error::Column`] naming the first
+    /// absent field rather than yielding an empty [`Iterator`].
+    ///
+    /// [1]: Deserialize::deserialize
     pub fn read<'q, I>(&'q self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'q, Error>
     where
         I: Read + 'q,
