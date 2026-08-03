@@ -72,7 +72,7 @@ use bitvec::slice::BitSlice;
 
 use crate::io::{Deserialize, Deserializer, Error, SizedBuf};
 use crate::schema::number;
-use crate::{query, Accumulate};
+use crate::{Accumulate, query};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 

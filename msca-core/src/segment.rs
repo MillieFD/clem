@@ -103,9 +103,9 @@ mod variant {
 
     use minicbor::{CborLen, Decode, Encode};
 
+    use crate::Serialize;
     use crate::io::Buffer;
     use crate::schema::number;
-    use crate::Serialize;
 
     /* -------------------------------------------------------------------------- Public Exports */
 

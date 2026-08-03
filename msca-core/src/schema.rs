@@ -82,7 +82,7 @@ use crate::accumulate::{self, Accumulate, Descriptor, OptBitVec, OptInSitu};
 use crate::io::{Buffer, Checksum, Register};
 use crate::manifest::{self, Manifest};
 use crate::segment::{Header, Segment, Variant};
-use crate::{io, Dataset, Sector, Serialize};
+use crate::{Dataset, Sector, Serialize, io};
 
 /// Shorthand [`OccupiedEntry`] for a [`Schema`][1] that already exists in the [`Schema`].
 ///

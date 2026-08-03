@@ -66,7 +66,7 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! write surface if the corresponding metadata feature is enabled. Implementers must include their
 //! own metadata parsing and validation logic.
 //!
-//! [1]: crate::segment::Variant
+//! [1]: segment::Variant
 
 #![doc = include_str!("../../doc/write-cycle.md")]
 #![doc = include_str!("../../doc/read-cycle.md")]
@@ -91,7 +91,7 @@ use xxhash_rust::xxh3::xxh3_64;
 
 use crate::manifest::{self, Manifest};
 use crate::segment::{self, Align, Segment};
-use crate::{number, schema, Serialize};
+use crate::{Serialize, number, schema};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
