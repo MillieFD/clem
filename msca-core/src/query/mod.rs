@@ -313,7 +313,42 @@ where
     }
 }
 
-/// A minimal column **descriptor** for [`Query`] planning and execution.
+/// A transient column **descriptor** containing [buffers](Buffer) across all [segments][1] for this
+/// [`Schema`]. Built from the on-disk [`manifest::Column`].
+///
+/// ### Guidance
+///
+/// A read composes of three stages:
+///
+/// - **Extract** each required column by name using [`Query::column`].
+/// - **Filter** each column independently.
+/// - **Join** multiple columns to read the surviving items.
+///
+/// This design excludes columns by default; the result set **only** includes explicitly named
+/// columns (extraction is selection). Users are advised to leverage this behaviour on wide schemas
+/// to reduce `IO` overhead.
+///
+/// ```rust
+/// # use msca_core::query::column::{Column, Join};
+/// # use msca_core::{Dataset, query};
+/// # async fn survey(dataset: &Dataset) -> Result<usize, query::Error> {
+/// # let query = dataset.query("test")?;
+///
+/// // Step 1: Extract the required columns.
+/// // Step 2: Apply column-specific filters.
+/// let sensors = query.column::<u32>("sensor")?.range(10u32..20)?;
+/// let altitudes = query.column::<f64>("altitude")?.range(500.0..)?;
+///
+/// // Step 3: Join the filtered columns. Read the number of surviving items.
+/// let count = sensors.and(altitudes)?.unpack().0.read()?.count();
+/// # Ok(count)
+/// # }
+/// ```
+///
+/// Refer to the [module documentation](self) and [column trait documentation](column::Column) for a
+/// complete description of the available filter vocabulary.
+///
+/// [1]: crate::segment::Segment
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, CborLen)]
 #[doc(hidden)] // reachable through Adapter::column for the #[derive(Read)] macro.
