@@ -181,6 +181,18 @@ impl<'m> Query<'m> {
         self.read::<I>()?.nth(n).transpose().map_err(Error::from)
     }
 
+    /// Return an [`Iterator`] yielding [`deserialized`][1] items from the named [`Column`].
+    ///
+    /// The requested [`Type`] is verified against the on-disk [`Column`] type exactly once.
+    /// Subsequent deserialization can progress fearlessly without additional runtime checks.
+    ///
+    /// ### Errors
+    ///
+    /// - [`Error::Column`] if `name` is not found in the query [`BTreeMap`].
+    /// - [`Error::Type`] if the requested [`Type`] is incompatible with the on-disk column type.
+    /// - [`Error::Io`] if a per-buffer source cannot be constructed from the memory map.
+    ///
+    /// [1]: Deserialize::deserialize
     pub fn stream<'q, I>(&'q self, name: &str) -> Result<impl Iterator<Item = Outcome<I>>, Error>
     where
         I: Read + Clone + 'q,
