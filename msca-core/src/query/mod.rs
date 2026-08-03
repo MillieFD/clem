@@ -392,10 +392,6 @@ impl Column {
             .count();
         buffers.truncate(count);
     }
-    /// Map the provided [`Key`](String) to a new empty [`Column`].
-    pub(crate) fn map(entry: (&String, &manifest::Column)) -> (String, Self) {
-        (entry.0.clone(), entry.1.clone().into())
-    }
 }
 
 impl From<manifest::Column> for Column {
