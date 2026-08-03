@@ -318,19 +318,17 @@ impl Column {
         self.buffers.values().map(Buffer::count).sum()
     }
 
-    /// Returns [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`]
-    /// type; otherwise returns a mutable reference to [`self`](Column) for method chaining.
+    /// Retain only the [buffers](Buffer) from [segments][1] that appear in **both** descriptors.
     ///
     /// ### Guidance
     ///
-    /// Refer to [`Column::accepts`] if a direct **or** nested inner-type match is permissible. Use
-    /// [`Column::exact`] if an immutable reference is required for downstream functions.
-    pub fn exact_mut<I>(&mut self) -> Result<&mut Self, Error>
-    where
-        Schema: Unfolder<I>,
-    {
-        self.exact::<I>()?;
-        Ok(self)
+    /// `sync` is bidirectional. After reconciliation, both `self` and `other` contain **only**
+    /// buffers from the same segments. See [`Column::retain`] for a unidirectional alternative.
+    ///
+    /// [1]: crate::segment::Segment
+    pub(crate) fn sync(&mut self, other: &mut Self) {
+        self.retain(other);
+        other.retain(self);
     }
 
     /// Returns [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`]
