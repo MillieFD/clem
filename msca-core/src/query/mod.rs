@@ -72,13 +72,15 @@ pub struct Query<'m> {
     ///
     /// Refer to the [safety documentation](io::File::mmap) for details.
     pub(crate) mmap: Arc<Mmap>,
-    /// [`Column`] descriptors keyed by name; cloned from the [manifest] at construction.
+    /// On-disk [`Column`][1] descriptors borrowed from the [manifest] and keyed by name.
     ///
-    /// [`BTreeMap`] guarantees a deterministic column order for consistent [serialisation][1] and
+    /// [`BTreeMap`] guarantees a deterministic column order for consistent [serialisation][2] and
     /// [`Schema`] comparison.
     ///
-    /// [1]: crate::accumulate::Serialize
-    pub(crate) columns: BTreeMap<String, Column>,
+    /// [1]: manifest::Column
+    /// [2]: crate::accumulate::Serialize
+    // NOTE: borrowed entries are zero-copy; owned map can remove entries without breaking manifest
+    pub(crate) columns: BTreeMap<&'m str, &'m manifest::Column>,
 }
 
 impl Query {
