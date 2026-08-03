@@ -398,9 +398,18 @@ impl Column {
     }
 }
 
-impl From<manifest::Column> for Column {
-    fn from(src: manifest::Column) -> Self {
-        Self { ty: src.ty, buffers: src.buffers }
+impl From<&manifest::Column> for Column {
+    /// Enumerate the on-disk sector-ordered [set][1] into a [map][2] keyed by segment ordinal.
+    ///
+    /// Refer to the [trait documentation](From) for more information.
+    ///
+    /// [1]: std::collections::BTreeSet
+    /// [2]: BTreeMap
+    fn from(src: &manifest::Column) -> Self {
+        Column {
+            ty: src.ty.clone(),
+            buffers: src.buffers.iter().cloned().enumerate().collect(),
+        }
     }
 }
 
