@@ -67,7 +67,7 @@ use crate::schema::{Schema, Type, Unfolder, number};
 ///
 /// [1]: crate::Dataset::query
 #[derive(Clone, Debug)]
-pub struct Query {
+pub struct Query<'m> {
     /// Read-only [memory map](Mmap) backed by the immutable segment region.
     ///
     /// Refer to the [safety documentation](io::File::mmap) for details.
