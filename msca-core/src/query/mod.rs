@@ -154,10 +154,10 @@ impl<'m> Query<'m> {
         I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
         Schema: Unfolder<I>,
     {
-        if let Some(entry) = self.columns.get_key_value(name) {
-            let buffers = entry.1.exact::<I>()?.buffers.clone();
-            let column = column::Src::new(self, entry.0, buffers);
-            Ok(column)
+        if let Some(e) = self.columns.get_key_value(name) {
+            let column = e.1.exact::<I>()?.into();
+            let src = column::Src::new(self, e.0, column);
+            Ok(src)
         } else {
             Error::Column { name: name.into() }.into()
         }
