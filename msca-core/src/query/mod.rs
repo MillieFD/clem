@@ -212,7 +212,8 @@ impl<'m> Query<'m> {
     ///
     /// [1]: crate::segment::Segment
     pub fn count(&self) -> u64 {
-        self.columns.values().next().map(Column::count).unwrap_or_default()
+        // NOTE: copied fn dereferences &&Column → &Column (no performance cost).
+        self.columns.values().next().copied().map(manifest::Column::count).unwrap_or_default()
     }
 }
 
