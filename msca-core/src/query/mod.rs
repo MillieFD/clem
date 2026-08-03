@@ -32,8 +32,8 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //!     .read();
 //! ```
 //!
-//! Items are deserialized exactly once. Every filter is an infallible monomorphized test. No file
-//! [`IO`](io) is executed until the [`Iterator`] returned by a terminal method is polled.
+//! Items are deserialized exactly once when the lazy [`Iterator`] returned by a terminal method is
+//! polled. Every filter is an infallible monomorphized test.
 
 #![doc = include_str!("../../../doc/query-filters.md")]
 #![doc = include_str!("../../../doc/query-columns.md")]
