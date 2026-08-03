@@ -42,6 +42,7 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Display};
 use std::hash::Hash;
+use std::iter;
 use std::num::TryFromIntError;
 use std::sync::Arc;
 
