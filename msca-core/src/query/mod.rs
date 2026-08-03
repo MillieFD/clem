@@ -136,7 +136,6 @@ impl<'m> Query<'m> {
 
     /// Select a named [`Column`] from the parent [`Query`].
     ///
-    ///
     /// The requested type is [verified](Column::exact) against the actual on-disk column [`Type`]
     /// exactly once. Subsequent column operations – such as filtering and deserialization – can
     /// progress fearlessly without further runtime checks.
