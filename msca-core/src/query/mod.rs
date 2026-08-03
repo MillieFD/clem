@@ -302,22 +302,9 @@ pub struct Column {
 }
 
 impl Column {
-    /// Returns [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`]
-    /// type; otherwise returns an immutable reference to [`self`](Column) for method chaining.
-    ///
-    /// ### Guidance
-    ///
-    /// Refer to [`Column::accepts`] if a direct **or** nested inner-type match is permissible. Use
-    /// [`Column::exact_mut`] if a mutable reference is required for downstream functions.
-    pub fn exact<I>(&self) -> Result<&Self, Error>
-    where
-        Schema: Unfolder<I>,
-    {
-        let expect = Schema::unfold();
-        match self.ty == expect {
-            true => Ok(self),
-            false => Error::Type { expect, actual: self.ty.clone() }.into(),
-        }
+    /// The number of on-disk items across every [`Buffer`] retained by the [`Column`].
+    pub(crate) fn count(&self) -> u64 {
+        self.buffers.values().map(Buffer::count).sum()
     }
 
     /// Returns [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`]
