@@ -42,13 +42,11 @@ use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, HashMap};
 use std::fmt::{self, Display};
 use std::hash::Hash;
-use std::iter;
 use std::num::TryFromIntError;
 use std::sync::Arc;
 
 use funty::Unsigned;
 use memmap2::Mmap;
-use minicbor::{CborLen, Decode, Encode};
 use xxhash_rust::xxh3::Xxh3Builder;
 
 use crate::io::{self, Deserialize};
@@ -155,7 +153,7 @@ impl<'m> Query<'m> {
         Schema: Unfolder<I>,
     {
         if let Some(e) = self.columns.get_key_value(name) {
-            let column = e.1.exact::<I>()?.into();
+            let column = e.1.exact::<I>()?;
             let src = column::Src::new(self, e.0, column);
             Ok(src)
         } else {
@@ -318,159 +316,6 @@ where
         I::Src<'a>: Composite<'a, Self> + Iterator<Item = Outcome<I>> + 'a,
     {
         I::Src::new(self).map(Resolve::resolve)
-    }
-}
-
-/// A transient column **descriptor** containing [buffers](Buffer) across all [segments][1] for this
-/// [`Schema`]. Built from the on-disk [`manifest::Column`].
-///
-/// ### Guidance
-///
-/// A read composes of three stages:
-///
-/// - **Extract** each required column by name using [`Query::column`].
-/// - **Filter** each column independently.
-/// - **Join** multiple columns to read the surviving items.
-///
-/// This design excludes columns by default; the result set **only** includes explicitly named
-/// columns (extraction is selection). Users are advised to leverage this behaviour on wide schemas
-/// to reduce `IO` overhead.
-///
-/// ```rust
-/// # use msca_core::query::column::{Column, Join};
-/// # use msca_core::{Dataset, query};
-/// # async fn survey(dataset: &Dataset) -> Result<usize, query::Error> {
-/// # let query = dataset.query("test")?;
-///
-/// // Step 1: Extract the required columns.
-/// // Step 2: Apply column-specific filters.
-/// let sensors = query.column::<u32>("sensor")?.range(10u32..20)?;
-/// let altitudes = query.column::<f64>("altitude")?.range(500.0..)?;
-///
-/// // Step 3: Join the filtered columns. Read the number of surviving items.
-/// let count = sensors.and(altitudes)?.unpack().0.iter()?.count();
-/// # Ok(count)
-/// # }
-/// ```
-///
-/// Refer to the [module documentation](self) and [column trait documentation](column::Column) for a
-/// complete description of the available filter vocabulary.
-///
-/// [1]: crate::segment::Segment
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, CborLen)]
-#[doc(hidden)] // reachable through Adapter::column for the #[derive(Read)] macro.
-pub struct Column {
-    /// The [`Type`] of items contained within this [`Column`].
-    #[n(0)]
-    pub(crate) ty: Type,
-    /// [`Buffer`] descriptors keyed by segment ordinal.
-    #[cbor(n(1), skip_if = "BTreeMap::is_empty")]
-    #[cfg_attr(
-        feature = "serde",
-        serde(default, skip_serializing_if = "BTreeMap::is_empty")
-    )]
-    pub(crate) buffers: BTreeMap<usize, Buffer>,
-}
-
-impl Column {
-    /// The number of on-disk items across every [`Buffer`] retained by the [`Column`].
-    pub(crate) fn count(&self) -> u64 {
-        self.buffers.values().map(Buffer::count).sum()
-    }
-
-    /// Retain only the [buffers](Buffer) from [segments][1] that appear in **both** descriptors.
-    ///
-    /// ### Guidance
-    ///
-    /// `sync` is bidirectional. After reconciliation, both `self` and `other` contain **only**
-    /// buffers from the same segments. See [`Column::retain`] for a unidirectional alternative.
-    ///
-    /// [1]: crate::segment::Segment
-    pub(crate) fn sync(&mut self, other: &mut Self) {
-        self.retain(other);
-        other.retain(self);
-    }
-
-    /// Returns [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`]
-    /// type **or** nested inner subtype; otherwise returns an immutable reference to
-    /// [`self`](Column) for method chaining.
-    ///
-    /// ### Guidance
-    ///
-    /// Refer to [`Type::exact`] if a direct non-nested match is required. Use
-    /// [`Column::accepts_mut`] if a mutable reference is required for downstream functions.
-    pub fn accepts<I>(&self) -> Result<&Self, Error>
-    where
-        Schema: Unfolder<I>,
-    {
-        let inner = Schema::unfold();
-        match self.ty == inner || matches!(&self.ty, Type::Option { subtype: s } if **s == inner) {
-            true => Ok(self),
-            false => Error::Type { expect: inner, actual: self.ty.clone() }.into(),
-        }
-    }
-
-    /// Retain only the [buffers](Buffer) in `self` from [segments][1] that also appear in `other`.
-    ///
-    /// ### Implementation
-    ///
-    /// Delegates to [`BTreeMap::retain`] internally. Each execution costs one traversal and never
-    /// allocates.
-    fn retain(&mut self, other: &Self) {
-        #[allow(unused_variables)]
-        self.buffers.retain(|seg, buf| other.buffers.contains_key(seg));
-    }
-
-    /// Skip the fist `n` items.
-    ///
-    /// Eagerly removes [buffers](Buffer) from the [`Query`] according to their `count` statistic;
-    /// returning the residual offset to the requested position within the first retained buffer.
-    fn skip<N>(buffers: &mut Vec<Buffer>, n: N) -> N
-    where
-        N: Unsigned,
-    {
-        let (skip, count) = buffers
-            .iter()
-            .scan(N::MIN, |total, buf| {
-                let count: N = buf.count().try_into().ok()?;
-                *total = total.checked_add(count)?;
-                Some(*total)
-            })
-            .take_while(|total| *total <= n)
-            .zip(1..)
-            .last()
-            .unwrap_or_default();
-        buffers.drain(..count);
-        n - skip
-    }
-    fn take(buffers: &mut Vec<Buffer>, n: u64) {
-        use std::ops::AddAssign;
-        let count = buffers
-            .iter()
-            .scan(u64::MIN, |total, buf| {
-                let count = buf.count();
-                total.add_assign(count);
-                Some(*total)
-            })
-            .take_while(|start| *start < n)
-            .count();
-        buffers.truncate(count);
-    }
-}
-
-impl From<&manifest::Column> for Column {
-    /// Enumerate the on-disk sector-ordered [set][1] into a [map][2] keyed by segment ordinal.
-    ///
-    /// Refer to the [trait documentation](From) for more information.
-    ///
-    /// [1]: std::collections::BTreeSet
-    /// [2]: BTreeMap
-    fn from(src: &manifest::Column) -> Self {
-        Column {
-            ty: src.ty.clone(),
-            buffers: src.buffers.iter().cloned().enumerate().collect(),
-        }
     }
 }
 
