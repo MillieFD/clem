@@ -87,9 +87,6 @@
         - Note: `Evaluate` is concrete per plain type plus blankets over `Option<I>` and `Vec<I>`.
         - Note: a GAT-discriminated blanket cannot coexist with the generic coverage; coherence forbids it.
     - [ ] Expand `#[derive(Data)]` to support enums by encoding the discriminant.
-    - [ ] Add remaining query filters: `mask` + `limit` + `offset`
-        - `limit`/`offset` are the standard `Iterator::take`/`skip` on `Query::read`; no builder methods added.
-        - `mask` intentionally omitted: it duplicates `.eq(col, true)`/`.is_some(col)` without new capability.
     - [x] `Query::iter` is no longer async; update documentation.
         - [x] Remove async references from [read-cycle.md](./doc/read-cycle.md).
         - [x] Remove async references from [query-filters.md](./doc/query-filters.md).
