@@ -162,8 +162,7 @@
         - On-disk order matches the returned indices; verified by mutation (reversing the drain order fails).
     - [x] Assess a `u64`/`u128` digest map (no key allocation, flat entries): **rejected** for exactness.
         - A digest collision silently aliases two distinct items to one permanent index; revisit with profiling.
-    - [ ] Per-column `unique` reader on `query::Column` to produce a deduplicated collection e.g. `HashSet`.
-    - [ ] Per-column `unique_with_index` reader on `query::Column` to produce a deduped item → index `HashMap`.
+    - [x] Per-column `Column::unique` reader produces a `HashSet` of deduplicated surviving items.
 - [ ] Finish `msca-core` root module (lib) to re-export public API. Check all visibility modifiers.
 - [x] Finalise `msca-derive` procedural macro design.
 - [x] Add `README.md` including:
