@@ -33,7 +33,7 @@
             - [x] `Outcome::Excluded` continues to the next item; loops until `Outcome::Success` or `Outcome::Finished`.
             - [x] `Outcome::Finished` yields `None`.
         - [x] `Read::boxed(ctx)` constructor returns a type-erased `Stream`; mirrors `Accumulate::boxed`.
-    - [x] Query is converted into an `Iterator` via `Query::read::<I>()` where `I: Read` is the composite rebuilder:
+    - [x] Query is converted into an `Iterator` via `Query::iter::<I>()` where `I: Read` is the composite rebuilder:
         - [x] `Outcome::Success(item)` yields `Some(Ok(item))`; `Outcome::Error` yields `Some(Err(error))`.
         - [x] `Outcome::Excluded` continues to the next item; the stream ends with `None`.
     - [x] `Query::column` verifies the requested type exactly once and returns a `Stream` for the named column.
@@ -48,7 +48,7 @@
         - [x] Returns `Outcome::Exclude` if **any** sub-stream return `Outcome::Exclude`.
         - [x] Surfaces `Outcome::Error` eagerly.
         - [x] `Read::boxed` hides the generated context from users behind the type-erased `Stream` trait object.
-        - [x] `Query::read::<I>` reads the composite stream for `I`; mirrors `Data::accumulator`.
+        - [x] `Query::iter::<I>` reads the composite stream for `I`; mirrors `Data::accumulator`.
     - [x] Fix inverted buffer pruning in `Query::range`; overlapping buffers are retained, disjoint buffers removed.
     - [ ] Implement optional and unsized readers: `OptBitVec` + `OptInSitu` + `Seq` + `OptSeq` + `Flatten`
         - [x] Implement `Deserialize` trait for niche types: `Option<char>` + `Option<NonZero>`
@@ -90,7 +90,7 @@
     - [ ] Add remaining query filters: `mask` + `limit` + `offset`
         - `limit`/`offset` are the standard `Iterator::take`/`skip` on `Query::read`; no builder methods added.
         - `mask` intentionally omitted: it duplicates `.eq(col, true)`/`.is_some(col)` without new capability.
-    - [x] `Query::read` and `Query::collect` are no longer async; update documentation.
+    - [x] `Query::iter` is no longer async; update documentation.
         - [x] Remove async references from [read-cycle.md](./doc/read-cycle.md).
         - [x] Remove async references from [query-filters.md](./doc/query-filters.md).
         - [x] Remove async references from [query-joins.md](./doc/query-joins.md).
