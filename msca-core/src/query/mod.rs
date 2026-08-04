@@ -351,6 +351,12 @@ pub enum Error {
         /// The actual on-disk column [`Type`].
         actual: Type,
     },
+    /// Attempted to [`join`][1] two [columns][2] from different [schemas][3].
+    ///
+    /// [1]: column::Join::and
+    /// [2]: manifest::Column
+    /// [3]: manifest::Schema
+    Join,
 }
 
 impl Display for Error {
@@ -360,6 +366,7 @@ impl Display for Error {
             Self::Io(e) => write!(f, "Query IO error → {e}"),
             Self::Number(e) => write!(f, "Number error → {e}"),
             Self::Type { expect, actual } => write!(f, "Type error → {expect} ≠ {actual}"),
+            Self::Join => write!(f, "Cross-query join is not yet supported"),
         }
     }
 }
