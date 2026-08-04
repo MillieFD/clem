@@ -212,6 +212,8 @@
     - Add each `#[derive(..)]` even where the crate never uses it, and even where the type is not yet `pub`.
     - Order the attributes per code style rule 21; feature-gate `serde` behind `#[cfg_attr(feature = "serde", ..)]`.
 - [ ] Fix `serde` crate feature; requires `bitvec` dependency to activate the `serde` feature.
+    - A type holding a closure or an `Mmap` needs a manual `impl` e.g. the `column::Filter` adapter predicate.
+    - Currently broken crate-wide: `Arc<Mmap>`, `BitVec`, `io::Error`, `schema::Error` and `TryFromSliceError`.
 - [ ] Add an optional feature-gated free-form metadata binary blob written after the manifest.
     - [ ] CBOR decoding ignores on-disk `metadata: Sector` field if present when the feature is disabled.
     - [ ] CBOR encoding adds on-disk `metadata: Sector` field if absent when the feature is enabled.
