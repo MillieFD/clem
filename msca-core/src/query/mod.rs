@@ -95,7 +95,7 @@ impl<'m> Query<'m> {
     /// - [`Error::Io`] if a deserialization failure occurs.
     ///
     /// [1]: crate::dataset::Dataset
-    pub fn unique<I, N>(&self) -> Result<HashMap<I, N, Xxh3Builder>, Error>
+    pub fn indexed<I, N>(&self) -> Result<HashMap<I, N, Xxh3Builder>, Error>
     where
         N: Unsigned,
         I: Read + Eq + Hash + 'static,
