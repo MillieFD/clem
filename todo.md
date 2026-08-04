@@ -217,8 +217,8 @@
 - [ ] Add an optional feature-gated free-form metadata binary blob written after the manifest.
     - [ ] CBOR decoding ignores on-disk `metadata: Sector` field if present when the feature is disabled.
     - [ ] CBOR encoding adds on-disk `metadata: Sector` field if absent when the feature is enabled.
-- [ ] Add `bin` segment variant for immutable binary data in any format (e.g. TOML):
-    - [ ] Add manifest `bins: BTreeSet<String, Sector>` field.
+- [x] Add `bin` segment variant for immutable binary data in any format (e.g. TOML):
+    - [x] Add manifest `bins: BTreeSet<String, Sector>` field.
 - [ ] Implement logging macros gated via the `log` feature.
 
 ### Crate Features (Priority IV)
