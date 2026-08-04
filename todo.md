@@ -179,8 +179,6 @@
     - [ ] Register a schema for external composite types; explains `#[derive(Data)]` and `Dataset::schema`.
     - [ ] Write a data segment; explains `Accumulator` and `Dataset::write` with subheadings for advanced use cases:
         - [ ] Multithreaded accumulation via `Clone`.
-        - [ ] When + why + how to use the `set` feature with example code.
-        - [ ] When + why + how to use the `index` feature with example code.
     - [ ] Query data; explains `Dataset::query` and the `Query` API with filters and iterators.
 - [x] Add [on-disk-format.md](./doc/on-disk-format.md) describing the on-disk layout in detail.
 - [ ] Search for discrepancies between [doc](./doc) and actual implementations. Update documentation as needed.
