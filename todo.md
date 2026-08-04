@@ -139,8 +139,8 @@
     - [ ] Triggered automatically during `File::open` if corruption is detected (now detectable via checksum).
     - [x] On-disk layout is self-describing: checksums + `size` stride + schema back-pointer make it walkable.
     - [ ] Walk the segment region in `Manifest::rebuild`, verifying each segment checksum.
-    - [ ] Identify any redundant on-disk fields not required for the layout to self-describe.
-    - [ ] Remove redundant fields to optimise on-disk size.
+    - [x] Identify any redundant on-disk fields not required for the layout to self-describe.
+    - [x] Remove redundant fields to optimise on-disk size.
 - [x] Ensure schema / type verification is performed exactly once; not per-read.
 - [ ] Add static assertion for usize into u64, then remove all `try_into` runtime checks with faster unchecked fn.
 - [x] Refactor `Buffer` min / max to use `[u8; 16]` instead of `Vec<u8>`
