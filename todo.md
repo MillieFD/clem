@@ -207,6 +207,10 @@
         - `accumulate::Buffer<A, I>` wraps every top-level column accumulator via `Schema::column`.
         - The first differing push replays the repeated item into the inner accumulator; one-off `O(count)` time.
         - Uniformity compares via `BitMatch::ne`: floats use the exact bit pattern (matching `NaN` stays compact).
+- [ ] Sweep every type in the workspace and add all derivable `std`, `minicbor` and `serde` attributes.
+    - External users cannot add impls to our types under the orphan rule; we must supply the flexibility.
+    - Add each `#[derive(..)]` even where the crate never uses it, and even where the type is not yet `pub`.
+    - Order the attributes per code style rule 21; feature-gate `serde` behind `#[cfg_attr(feature = "serde", ..)]`.
 - [ ] Fix `serde` crate feature; requires `bitvec` dependency to activate the `serde` feature.
 - [ ] Add an optional feature-gated free-form metadata binary blob written after the manifest.
     - [ ] CBOR decoding ignores on-disk `metadata: Sector` field if present when the feature is disabled.
