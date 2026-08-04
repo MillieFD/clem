@@ -223,4 +223,5 @@
 
 ### Ecosystem & Tooling (Priority V)
 
-- [ ] Produce a CLI tool for inspecting `msca` files. Write to `msca-cli` subcrate.
+- [ ] Produce a TUI tool for inspecting `msca` files. Write to `msca-tui` subcrate.
+- [ ] Agent skill for using the `msca` crate based on [user-guide.md](doc/user-guide.md)
