@@ -152,9 +152,9 @@ impl<'m> Query<'m> {
         I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
         Schema: Unfolder<I>,
     {
-        if let Some(e) = self.columns.get_key_value(name) {
-            let column = e.1.exact::<I>()?;
-            let src = column::Src::new(self, e.0, column);
+        if let Some(entry) = self.columns.get(name) {
+            let column = entry.exact::<I>()?;
+            let src = column::Src::new(self, column);
             Ok(src)
         } else {
             Error::Column { name: name.into() }.into()
