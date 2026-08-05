@@ -508,9 +508,24 @@ pub mod column {
         }
     }
 
-    pub(crate) struct Skip<S> {
-        inner: S,
-        skip: u64,
+    /// An [Adapter] that skips the first `n` items.
+    ///
+    /// This `struct` is created using the [`skip`](Column::skip) method on [`Column`]. See the
+    /// function documentation for more details.
+    ///
+    /// ### Implementation
+    ///
+    /// [`Buffer`] candidates which are provably disjoint from the requested result set are excluded
+    /// eagerly at construction. The `skip` field holds the residual offset into the first retained
+    /// buffer.
+    pub(crate) struct Skip<S>
+    where
+        S: Column,
+    {
+        /// The wrapped column handle.
+        source: S,
+        /// Residual offset into the first retained [`Buffer`].
+        skip: usize,
     }
 
     pub(crate) struct Take<S> {
