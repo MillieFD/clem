@@ -442,11 +442,18 @@ pub mod column {
     #[doc(hidden)] // returned by Adapter::src; not intended as a stable API
     pub struct Src<'q, I> {
         /// An immutable reference to the parent [`Query`].
-        pub query: &'q Query,
-        /// The name of the [`Column`] over which this [`Src`] iterates.
-        pub name: &'q str,
-        /// Candidate [`Buffer`] descriptors keyed by [`Segment`](crate::segment::Segment) ordinal.
-        pub buffers: BTreeMap<usize, Buffer>,
+        pub query: &'q Query<'q>,
+        /// A minimal [`Column`](manifest::Column) descriptor borrowed from the parent [`Query`] for
+        /// zero-cost buffer traversal.
+        ///
+        /// The descriptor contains a [set][1] of unique [`Buffer`] descriptors in on-disk
+        /// [`Segment`][2] order.
+        ///
+        /// [1]: std::collections::BTreeSet
+        /// [2]: crate::segment::Segment
+        pub column: &'q manifest::Column,
+        /// Inclusion mask for [`Buffer`] candidates.
+        pub mask: BitBox,
         /// Type-state carrier for the requested [`item`](I) type.
         item: PhantomData<I>,
     }
