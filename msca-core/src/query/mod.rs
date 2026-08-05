@@ -547,6 +547,10 @@ pub mod column {
         /// The number of requested items.
         take: usize,
     }
+
+    /* ---------------------------------------------------------------- Adapter Trait Definition */
+
+    /// A type which can communicate with upstream and downstream [`Column`] types.
     #[doc(hidden)] // reachable through the blanket Column implementation
     pub trait Adapter {
         type Item: Read;
