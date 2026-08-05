@@ -462,20 +462,7 @@ pub mod column {
         }
     }
 
-    /// The single filter carrier: applies an item [`filter`](Self::filter) to each included item.
-    ///
-    /// One type serves both sides of the chain. Wrapping a handle it is an [`Adapter`]; wrapping
-    /// the read-time stream of that handle it is the [`Iterator`] twin, because the state each role
-    /// needs is identical – an inner source and the predicate. Each [`Include`][1] item maps to a
-    /// fresh [`Outcome`], while [`Exclude`](Outcome::Exclude) and [`Error`](Outcome::Error) pass
-    /// through untouched.
-    ///
-    /// The two roles bound [`S`] and [`F`] **incompatibly** – [`Adapter`] with `F: Fn(S::Item) ->
-    /// Outcome<S::Item>` for the chain, [`Iterator`] with `F: Fn(E) -> Outcome<E>` for the
-    /// stream – so neither can move to the struct definition without collapsing one role. The
-    /// bounds live on the respective [`Adapter`] and [`Iterator`] implementations instead.
-    ///
-    /// [1]: Outcome::Include
+    /// A filter adapter that applies the specified `filter` to the wrapped `source`.
     pub(crate) struct Filter<S, F> {
         source: S,
         filter: F,
