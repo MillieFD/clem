@@ -471,7 +471,9 @@ pub mod column {
 
     /// A filter adapter that applies the specified `filter` to the wrapped `source`.
     pub(crate) struct Filter<S, F> {
+        /// The wrapped data source which yields items for the filter closure.
         source: S,
+        /// A filter closure which maps each item from the source to an [`Outcome`].
         filter: F,
     }
 
