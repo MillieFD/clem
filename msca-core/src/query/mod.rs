@@ -528,9 +528,24 @@ pub mod column {
         skip: usize,
     }
 
-    pub(crate) struct Take<S> {
-        inner: S,
-        take: u64,
+    /// An [Adapter] that reads at most `n` items.
+    ///
+    /// This `struct` is created using the [`take`](Column::take) method on [`Column`]. See the
+    /// function documentation for more details.
+    ///
+    /// ### Implementation
+    ///
+    /// [`Buffer`] candidates which are provably disjoint from the requested result set are excluded
+    /// eagerly at construction. The `skip` field holds the number of requested items. The adapter
+    /// applies [`Iterator::take`] to the underlying data source at read-time.
+    pub(crate) struct Take<S>
+    where
+        S: Column,
+    {
+        /// The wrapped data source.
+        source: S,
+        /// The number of requested items.
+        take: usize,
     }
     #[doc(hidden)] // reachable through the blanket Column implementation
     pub trait Adapter {
