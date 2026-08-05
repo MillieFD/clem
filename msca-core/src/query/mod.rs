@@ -553,6 +553,7 @@ pub mod column {
     /// A type which can communicate with upstream and downstream [`Column`] types.
     #[doc(hidden)] // reachable through the blanket Column implementation
     pub trait Adapter {
+        /// The [deserialized](Deserialize) item type yielded by this column.
         type Item: Read;
 
         fn root<'a>(&'a self) -> &'a Root<'a, Self::Item>;
