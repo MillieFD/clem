@@ -452,7 +452,23 @@ pub mod column {
         /// [1]: std::collections::BTreeSet
         /// [2]: crate::segment::Segment
         pub column: &'q manifest::Column,
-        /// Inclusion mask for [`Buffer`] candidates.
+        /// Positional inclusion mask over the borrowed [`Buffer`] candidates set.
+        ///
+        /// The `n`th bit corresponds to the `n`th [`Buffer`] candidate: a set bit `1` includes the
+        /// buffer, a clear bit `0` excludes the buffer. The [`BTreeSet`][1] orders candidate
+        /// buffers by on-disk [`Sector`](io::Sector) which increases monotonically in write-order.
+        ///
+        /// ```text
+        /// column    [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
+        /// mask        1    0    1    1    0      Mutable owned bitmask.
+        ///             ▼         ▼    ▼
+        /// read        A         C    D           Buffers B and E are never read.
+        /// ```
+        ///
+        /// Filters can exclude buffers before [`IO`](io) by setting the corresponding bit.
+        /// Refer to the [column trait documentation](Column) for details of the available filters.
+        ///
+        /// [1]: std::collections::BTreeSet
         pub mask: BitBox,
         /// Type-state carrier for the requested [`item`](I) type.
         item: PhantomData<I>,
