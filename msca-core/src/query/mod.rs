@@ -475,17 +475,17 @@ pub mod column {
         filter: F,
     }
 
-    impl<S, F, E> Iterator for Filter<S, F>
+    impl<S, F, O> Iterator for Filter<S, F>
     where
-        S: Iterator<Item = Outcome<E>>,
-        F: Fn(E) -> Outcome<E>,
+        S: Iterator<Item = Outcome<O>>,
+        F: Fn(O) -> Outcome<O>,
     {
-        type Item = Outcome<E>;
+        type Item = Outcome<O>;
 
-        fn next(&mut self) -> Option<Outcome<E>> {
+        fn next(&mut self) -> Option<Outcome<O>> {
             match self.source.next()? {
                 Outcome::Include(item) => (self.filter)(item).into(),
-                other => other.into(),
+                other => other.into(), // skip excluded items
             }
         }
     }
