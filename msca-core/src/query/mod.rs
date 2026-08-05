@@ -413,19 +413,23 @@ where
 /* --------------------------------------------------------------------------- Column Sub-Module */
 
 pub mod column {
+    //! [`Column`] adapters for [`Buffer`] set reduction before [`IO`](io) at build time.
+    //!
+    //! Check out the [stream module](stream) for per-item filters applied during `IO` at read time.
+
     use std::collections::{HashMap, HashSet};
     use std::hash::Hash;
+    use std::iter;
     use std::marker::PhantomData;
-    use std::ops::{Not, RangeBounds, RangeInclusive};
-    use std::sync::Arc;
-    use std::{iter, slice};
+    use std::ops::{Not, RangeBounds};
 
+    use bitvec::boxed::BitBox;
+    use bitvec::slice::BitSlice;
     use funty::Unsigned;
     use xxhash_rust::xxh3::Xxh3Builder;
 
-    use super::{Error, Query, stream};
+    use super::{Buffer, Error, Query, manifest, stream};
     use crate::io::{self, Deserialize};
-    use crate::manifest::Buffer;
     use crate::read::{Evaluate, IsOption, Outcome, Read, Reader, Resolve};
     use crate::schema::BitMatch;
 
@@ -435,7 +439,7 @@ pub mod column {
     /// [`Column`] in the [`Query`] result set.
     ///
     /// [1]: Deserialize::deserialize
-    #[doc(hidden)] // returned by Adapter::root; not intended as a stable API
+    #[doc(hidden)] // returned by Adapter::src; not intended as a stable API
     pub struct Src<'q, I> {
         /// An immutable reference to the parent [`Query`].
         pub query: &'q Query,
@@ -448,10 +452,30 @@ pub mod column {
     }
 
     impl<'q, I> Src<'q, I> {
-        pub(crate) const fn new(query: &'q Query, name: &'q str, buffers: Vec<Buffer>) -> Self {
-            Self { query, name, buffers, item: PhantomData }
+        pub(crate) fn new(query: &'q Query<'q>, column: &'q manifest::Column) -> Self {
+            Self {
+                query,
+                column,
+                mask: column.mask(),
+                item: PhantomData,
+            }
         }
     }
+
+    /// The single filter carrier: applies an item [`filter`](Self::filter) to each included item.
+    ///
+    /// One type serves both sides of the chain. Wrapping a handle it is an [`Adapter`]; wrapping
+    /// the read-time stream of that handle it is the [`Iterator`] twin, because the state each role
+    /// needs is identical – an inner source and the predicate. Each [`Include`][1] item maps to a
+    /// fresh [`Outcome`], while [`Exclude`](Outcome::Exclude) and [`Error`](Outcome::Error) pass
+    /// through untouched.
+    ///
+    /// The two roles bound [`S`] and [`F`] **incompatibly** – [`Adapter`] with `F: Fn(S::Item) ->
+    /// Outcome<S::Item>` for the chain, [`Iterator`] with `F: Fn(E) -> Outcome<E>` for the
+    /// stream – so neither can move to the struct definition without collapsing one role. The
+    /// bounds live on the respective [`Adapter`] and [`Iterator`] implementations instead.
+    ///
+    /// [1]: Outcome::Include
     pub(crate) struct Filter<S, F> {
         source: S,
         filter: F,
