@@ -522,7 +522,7 @@ pub mod column {
     where
         S: Column,
     {
-        /// The wrapped column handle.
+        /// The wrapped data source.
         source: S,
         /// Residual offset into the first retained [`Buffer`].
         skip: usize,
