@@ -30,14 +30,13 @@ pub mod schema;
 
 pub use memmap2::Mmap;
 
-pub use self::accumulate::{Accumulate, Accumulator, BoxAcc, Columns, Describe, Serialize};
+pub use self::accumulate::{Accumulate, Accumulator, Columns, Describe, Serialize};
 pub use self::binary::Bin;
 pub use self::dataset::Dataset;
 pub use self::error::Error;
 pub use self::io::{Deserialize, Sector, SizedBuf};
-pub use self::query::column::{Column, Join, Joiner, Joint};
-pub use self::query::Query;
-pub use self::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Stream};
+pub use self::query::{Adjunct, Column, Combine, Conjunct, Disjunct, Join, Query};
+pub use self::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Unfiltered};
 pub use self::schema::Schema;
 pub use self::segment::Align;
 
