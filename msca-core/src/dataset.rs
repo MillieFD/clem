@@ -243,8 +243,9 @@ impl Dataset {
     /// Initialise a new [`Query`] over the named [`Schema`](manifest::Schema).
     ///
     /// The query begins with **every** column and **every** buffer from the specified schema.
-    /// Each [`Column`](query::Column) is filtered subtractively to reduce the result set. No file
-    /// [`IO`](io) occurs until the query is executed via a terminal method such as [`Query::read`].
+    /// Each [`Column`](manifest::Column) is filtered subtractively to reduce the result set. No
+    /// file [`IO`](io) occurs until the query is executed via a terminal method such as
+    /// [`Query::iter`].
     ///
     /// ### Errors
     ///
@@ -253,7 +254,7 @@ impl Dataset {
     /// [1]: manifest::Schema
     /// [2]: query::Error::Column
     /// [3]: manifest::Manifest
-    pub fn query(&self, name: &str) -> Result<Query, query::Error> {
+    pub fn query<'m>(&'m self, name: &str) -> Result<Query<'m>, query::Error> {
         let columns = self
             .file
             .manifest
