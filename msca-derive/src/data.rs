@@ -49,7 +49,7 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use syn::{DeriveInput, Ident, Visibility};
 
-use crate::{fields, Field};
+use crate::{Field, fields};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -90,7 +90,7 @@ pub(crate) fn expand(input: &DeriveInput) -> Result<TokenStream, syn::Error> {
 ///
 /// The accumulator appears in the public [`Data::Acc`] associated type, so it inherits the source
 /// visibility to avoid leaking a private type through the public interface.
-fn accumulator(vis: &Visibility, acc: &Ident, fields: &[Field<'_>]) -> TokenStream {
+fn accumulator(vis: &Visibility, acc: &Ident, fields: &[Field]) -> TokenStream {
     let idents = Field::idents(fields);
     let types = Field::types(fields);
     quote! {
@@ -112,7 +112,7 @@ fn accumulator(vis: &Visibility, acc: &Ident, fields: &[Field<'_>]) -> TokenStre
 /// `Descriptor`: each field column registers its own descriptor through `Describe::buffers`.
 ///
 /// This design ensures that all sub-accumulators advance in lockstep.
-fn accumulate(src: &Ident, acc: &Ident, fields: &[Field<'_>]) -> TokenStream {
+fn accumulate(src: &Ident, acc: &Ident, fields: &[Field]) -> TokenStream {
     let idents = Field::idents(fields);
     // NOTE: crate::fields rejects empty structs; the first field is guaranteed to exist
     let head = idents[0];
@@ -142,7 +142,7 @@ fn accumulate(src: &Ident, acc: &Ident, fields: &[Field<'_>]) -> TokenStream {
 ///
 /// - `buffers` threads the `offset` through each sub-accumulator in order to encode buffers
 ///   contiguously, returning the final offset.
-fn describe(src: &Ident, acc: &Ident, fields: &[Field<'_>]) -> TokenStream {
+fn describe(src: &Ident, acc: &Ident, fields: &[Field]) -> TokenStream {
     let idents = Field::idents(fields);
     quote! {
         impl ::msca::Describe<#src> for #acc {
@@ -165,7 +165,7 @@ fn describe(src: &Ident, acc: &Ident, fields: &[Field<'_>]) -> TokenStream {
 ///   sub-accumulator.
 /// - `serialize_into` frames each sub-accumulator as one `SizedBuf` region in order.
 /// - `serialize` allocates using `size` and fills via `serialize_into`.
-fn serialize(acc: &Ident, fields: &[Field<'_>]) -> TokenStream {
+fn serialize(acc: &Ident, fields: &[Field]) -> TokenStream {
     let idents = Field::idents(fields);
     quote! {
         impl ::msca::Serialize for #acc {
@@ -210,7 +210,7 @@ fn serialize(acc: &Ident, fields: &[Field<'_>]) -> TokenStream {
 }
 
 /// Implement `Data` for the annotated external type.
-fn data(src: &Ident, acc: &Ident, fields: &[Field<'_>]) -> TokenStream {
+fn data(src: &Ident, acc: &Ident, fields: &[Field]) -> TokenStream {
     let idents = Field::idents(fields);
     let types = Field::types(fields);
     let names = Field::names(fields);
