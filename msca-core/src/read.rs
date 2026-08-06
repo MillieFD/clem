@@ -216,6 +216,24 @@ impl<I> Outcome<I> {
             other => other,
         }
     }
+
+    /// Remove one layer of optionality, so downstream adapters see the inner item type.
+    ///
+    /// A present item keeps its slot and its content; an absent one keeps the slot alone, because
+    /// the flattened type has no way to carry absence and a sibling column must stay in lockstep.
+    /// The item [`None`] and [`Absent`](Self::Absent) are the same state once the option is gone,
+    /// so the two collapse into one.
+    pub(crate) fn flatten(self) -> Outcome<I::Item>
+    where
+        I: IsOption,
+    {
+        match self {
+            Self::Include(i) => i.item().map(Outcome::Include).unwrap_or(Outcome::Absent),
+            Self::Exclude(i) => i.item().map(Outcome::Exclude).unwrap_or(Outcome::Absent),
+            Self::Error(e) => Outcome::Error(e),
+            Self::Absent => Outcome::Absent,
+        }
+    }
 }
 
 impl<I> From<Error> for Outcome<I> {
