@@ -387,48 +387,93 @@ mod tests {
 
     /* ------------------------------------------------------------------------------ Unit Tests */
 
-    /// [`expand`] emits the hidden reader, both `Composite` implementations, and the `Read`
-    /// rebuilder.
+    /// [`expand`] emits the reader, one source-generic `Composite`, the lockstep rebuilder, and
+    /// the unfiltered entry point.
     #[test]
     fn expand_emits_reader_and_impls() {
         let code = code();
-        assert!(has(&code, "struct RowReader<'a>"));
-        assert!(has(&code, "Composite<'a, ::msca::Query> for RowReader<'a>"));
-        assert!(has(
-            &code,
-            "Composite<'a, ::msca::Join<L0, L1>> for RowReader<'a>"
-        ));
-        assert!(has(&code, "Iterator for RowReader<'a>"));
+        assert!(has(&code, "struct RowReader<'a, S>"));
+        assert!(has(&code, "::msca::Composite<'a, S> for Row"));
+        assert!(has(&code, "Iterator for RowReader<'a, N>"));
+        assert!(has(&code, "::msca::Unfiltered<'a> for Row"));
         assert!(has(&code, "impl ::msca::Read for Row"));
     }
 
-    /// [`expand`] acquires every column stream fallibly: the `Query` path propagates from
-    /// `Query::stream` and each `Join` leg from `Column::stream`, so framing errors abort early.
+    /// [`expand`] emits **one** `Composite` implementation whatever the source shape.
+    ///
+    /// A second implementation over a fixed source would overlap this one under coherence, and
+    /// would mean a filtered read and an unfiltered read assembled their streams by different
+    /// routes; the unfiltered path builds the default conjunction and reuses this one instead.
+    #[test]
+    fn expand_emits_one_composite() {
+        let code = code();
+        assert_eq!(code.matches("Composite < 'a").count(), 2); // the impl, and the call in it
+        assert!(has(
+            &code,
+            "<Row as ::msca::Composite<'a, ::msca::Conjunct<"
+        ));
+    }
+
+    /// [`expand`] acquires every column fallibly: each leg is verified against the on-disk column
+    /// type by `Query::column`, then builds its per-buffer sources eagerly, so a missing column or
+    /// a framing error aborts before any item is yielded.
     #[test]
     fn expand_acquires_streams_fallibly() {
         let code = code();
-        assert!(has(&code, "src.stream::<u32>(\"a\")?"));
-        assert!(has(&code, "::msca::query::column::Adapter::stream(leg)?"));
+        assert!(has(&code, "query.column::<u32>(\"a\")?"));
+        assert!(has(&code, "::msca::query::Build::build(a,"));
     }
 
-    /// [`expand`] omits the `Join` `Composite` implementation for a single-field struct.
+    /// [`expand`] pulls every field stream before inspecting any outcome, and inspects each
+    /// outcome exactly once.
+    ///
+    /// Pulling first is what keeps the columns in lockstep: an error or an absent slot on one
+    /// column returns early, and a sibling left unpulled would be a slot behind ever after. One
+    /// match then yields both the verdict and the item, so neither is re-derived.
     #[test]
-    fn expand_single_field_skips_join() {
+    fn expand_pulls_every_field_before_inspecting_any() {
+        let code = code().replace(' ', "");
+        let pull = code.rfind("Iterator::next(&mutself.b)").expect("no second pull");
+        let inspect = code.find("let(keep_a,a)=matcha").expect("no single-match inspection");
+        assert!(pull < inspect);
+        assert_eq!(code.matches("=matcha{").count(), 1); // field `a` is matched exactly once
+    }
+
+    /// [`expand`] mints one selection and narrows it through every leg before building a stream.
+    ///
+    /// The selection is settled once, so a buffer cleared by a filter on one leg is never read by
+    /// any sibling; each leg then takes a copy of the settled selection to build from.
+    #[test]
+    fn expand_selects_before_building() {
+        let code = code().replace(' ', ""); // generated tokens are space-separated
+        let select = code.find("::msca::query::Select::select").expect("no selection");
+        let build = code.find("::msca::query::Build::build").expect("no build");
+        assert!(select < build);
+        assert!(has(&code, "let mut mask = query.mask()"));
+    }
+
+    /// [`expand`] builds no combination for a single-field struct, whose whole source is one leg.
+    ///
+    /// The generated shape is otherwise identical: one source-generic `Composite`, reached by the
+    /// unfiltered path exactly as a wider struct is.
+    #[test]
+    fn expand_single_field_skips_combination() {
         let input: DeriveInput = parse_quote! { struct One { a: u32 } };
         let code = expand(&input).expect("Expansion failed").to_string();
-        assert!(has(&code, "Composite<'a, ::msca::Query> for OneReader<'a>"));
-        assert!(!has(&code, "::msca::Join"));
+        assert!(has(&code, "::msca::Composite<'a, S> for One"));
+        assert!(!has(&code, "::msca::Join::and"));
+        assert!(!has(&code, "::msca::Combine"));
     }
 
     /// [`expand`] propagates the source visibility to the generated reader.
     ///
-    /// The reader appears in the public `Read::Reader` GAT. A `pub` source must therefore yield a
+    /// The reader appears in the public `Read::Src` GAT. A `pub` source must therefore yield a
     /// `pub` reader to avoid leaking a private type through the public interface.
     #[test]
     fn expand_reader_inherits_visibility() {
         let input: DeriveInput = parse_quote! { pub struct Row { a: u32, b: f64 } };
         let code = expand(&input).expect("Expansion failed").to_string();
-        assert!(has(&code, "pub struct RowReader<'a>"));
+        assert!(has(&code, "pub struct RowReader<'a, S>"));
     }
 
     /// Each reader field is a type-erased boxed [`Outcome`] iterator; the opaque column stream
@@ -441,11 +486,21 @@ mod tests {
         assert!(has(&code, &field));
     }
 
-    /// [`expand`] output parses as valid Rust.
+    /// [`expand`] output parses as valid Rust at every arity.
+    ///
+    /// One field emits an empty `where` clause and three fields emit an interior node parameter,
+    /// so the narrow and wide shapes are checked alongside the shared two-field fixture.
     #[test]
     fn expand_output_parses() {
-        let expanded = expand(&row()).expect("Expansion failed");
-        syn::parse2::<syn::File>(expanded).expect("Generated code does not parse");
+        let inputs: [DeriveInput; 3] = [
+            parse_quote! { struct One { a: u32 } },
+            row(),
+            parse_quote! { struct Wide { a: u32, b: f64, c: u16 } },
+        ];
+        inputs.iter().for_each(|input| {
+            let expanded = expand(input).expect("Expansion failed");
+            syn::parse2::<syn::File>(expanded).expect("Generated code does not parse");
+        });
     }
 
     /// [`expand`] rejects inputs without named fields.
