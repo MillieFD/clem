@@ -435,7 +435,7 @@ mod tests {
             .values()
             .flat_map(|schema| schema.columns.values())
             .flat_map(|column| column.buffers.iter())
-            .map(Buffer::offset)
+            .map(|buffer| buffer.sector().offset)
             .collect();
         std::fs::remove_file(&path).ok();
         assert_eq!(offsets.len(), 4); // two segments × two columns
