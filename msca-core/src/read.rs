@@ -179,6 +179,13 @@ pub enum Outcome<I> {
     Exclude(I),
     /// An [`Error`] occurred during [deserialization](Deserialize).
     Error(Error),
+    /// A slot holding no item, because a structural filter narrowed the item type past an absent
+    /// optional item.
+    ///
+    /// The slot is **retained** so a sibling column stays in lockstep, but it carries nothing: the
+    /// narrowed type has no representation for absence. A composite reader propagates this rather
+    /// than rebuilding an item, exactly as it does for an error.
+    Absent,
 }
 
 impl<I> Outcome<I> {
@@ -192,6 +199,7 @@ impl<I> Outcome<I> {
             Self::Include(i) => Outcome::Include(f(i)),
             Self::Exclude(i) => Outcome::Exclude(f(i)),
             Self::Error(e) => Outcome::Error(e),
+            Self::Absent => Outcome::Absent,
         }
     }
 
@@ -244,6 +252,7 @@ pub(crate) trait Resolve<I>: Iterator<Item = Outcome<I>> + Sized {
                     Outcome::Include(item) => return Ok(item).into(),
                     Outcome::Error(error) => return Err(error).into(),
                     Outcome::Exclude(..) => continue, // retry the underlying iterator
+                    Outcome::Absent => continue,      // an absent slot carries no item to yield
                 }
             }
         })
