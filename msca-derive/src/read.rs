@@ -39,18 +39,20 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! Generated code lives inside an anonymous `const` block to avoid collision with user items.
 //!
 //! 1. A composite reader type holding one boxed sub-stream per field.
-//! 2. A `Composite` implementation over the `Query` (unfiltered composite path).
-//! 3. A `Composite` implementation over a `Join` chain, emitted for two or more fields (filtered
-//!    path).
-//! 4. A `Read` implementation pulling one item per sub-stream in lockstep.
+//! 2. One `Composite` implementation, generic over any combination of the named columns.
+//! 3. An `Iterator` implementation pulling one item per sub-stream in lockstep.
+//! 4. An `Unfiltered` implementation combining every column with nothing attached.
+//!
+//! A filtered read and an unfiltered one therefore reach their streams by the **same** route: the
+//! unfiltered path builds the default conjunction and hands it to the same `Composite`.
 //!
 //! [1]: std::collections::BTreeMap
 
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::{ToTokens, format_ident, quote};
 use syn::{DeriveInput, Ident, Visibility};
 
-use crate::{fields, Field};
+use crate::{Field, fields};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -68,16 +70,16 @@ pub(crate) fn expand(input: &DeriveInput) -> Result<TokenStream, syn::Error> {
     let fields = &fields(input)?;
     // 3. Generate the reader struct and its trait implementations
     let structure = structure(vis, reader, fields);
-    let query = query(reader, fields);
-    let join = join(reader, fields);
+    let composite = composite(src, reader, fields);
     let iterate = iterate(src, reader, fields);
+    let unfiltered = unfiltered(src, reader, fields);
     // 4. Wrap in an anonymous const block to avoid collision with user items
     Ok(quote! {
         const _: () = {
             #structure
-            #query
-            #join
+            #composite
             #iterate
+            #unfiltered
         };
     })
 }
@@ -90,48 +92,189 @@ pub(crate) fn expand(input: &DeriveInput) -> Result<TokenStream, syn::Error> {
 /// columns differ and a struct field must name one concrete type. The reader appears in the public
 /// `Read::Src` GAT, so it inherits the source visibility to avoid leaking a private type through
 /// the public interface.
-fn structure(vis: &Visibility, reader: &Ident, fields: &[Field<'_>]) -> TokenStream {
+fn structure(vis: &Visibility, reader: &Ident, fields: &[Field]) -> TokenStream {
     let idents = Field::idents(fields);
     let types = Field::types(fields);
     quote! {
-        /// Generated composite reader holding one boxed column stream per field.
-        #vis struct #reader<'a> {
+        /// Generated composite reader: one boxed column stream per field.
+        ///
+        /// The stream types differ per column and are opaque, so each field is type-erased. `S`
+        /// carries the source shape, which is what lets the fold monomorphize.
+        #vis struct #reader<'a, S> {
             #(
                 #idents: ::std::boxed::Box<
                     dyn ::core::iter::Iterator<Item = ::msca::Outcome<#types>> + 'a
                 >,
             )*
+            src: ::core::marker::PhantomData<S>,
         }
     }
 }
 
-/// Implement [`Composite`] over the borrowed [`Query`] (unfiltered composite path).
+/// Implement `Composite` **once**, generic over any combination of the named columns.
 ///
-/// Each field resolves its column stream from the query through the internal `stream` method,
-/// boxing the opaque iterator into the field type. The requested type is verified against the
-/// on-disk column type exactly once; a missing or mismatched column aborts eagerly.
-fn query(reader: &Ident, fields: &[Field<'_>]) -> TokenStream {
+/// The source arrives unresolved. A selection is minted here and narrowed through every filter of
+/// every leg before a single stream is built, so a buffer one leg cleared costs its siblings no
+/// file IO. The resolved tree is then walked leg by leg through `Combine::unpack`, because a
+/// composite reaches its legs through a type parameter where field access is unavailable.
+///
+/// `S` is the source combination, `N` a node of the resolved tree, and `B` a resolved leg.
+fn composite(src: &Ident, reader: &Ident, fields: &[Field]) -> TokenStream {
     let idents = Field::idents(fields);
-    let names = Field::names(fields);
-    let types = Field::types(fields);
-    let bounds = stream_bounds(fields);
+    let nodes = nodes(fields.len());
+    let builds = builds(fields.len());
+    let bounds = descent(&nodes, &builds, fields);
+    let unpack = unpack(&idents, fields.len());
+    let build = build(&idents);
     quote! {
-        impl<'a> ::msca::Composite<'a, ::msca::Query> for #reader<'a>
+        impl<'a, S, #(#nodes,)* #(#builds,)*> ::msca::Composite<'a, S> for #src
         where
+            S: ::msca::query::Select<'a>,
             #bounds
         {
-            fn new(src: &'a ::msca::Query) -> ::core::result::Result<Self, ::msca::query::Error> {
-                ::core::result::Result::Ok(Self {
-                    #( #idents: ::std::boxed::Box::new(src.stream::<#types>(#names)?), )*
-                })
+            type Reader = #reader<'a, <S as ::msca::query::Select<'a>>::Build>;
+
+            fn new(src: S) -> ::core::result::Result<Self::Reader, ::msca::query::Error> {
+                let query = ::msca::query::Select::query(&src);
+                let mut mask = query.mask();
+                let node = ::msca::query::Select::select(src, &mut mask)?;
+                #unpack
+                #build
+                let src = ::core::marker::PhantomData;
+                ::core::result::Result::Ok(#reader { #( #idents, )* src })
             }
         }
     }
 }
 
-/// The `where` bounds `Query::stream` requires of each field: the field must be [`Read`] and
+/// The node type parameters `N1, N2, …` naming each **interior** level of the resolved tree.
+///
+/// The root is the resolved source itself, so a tree over `count` legs contributes `count - 2`.
+fn nodes(count: usize) -> Vec<Ident> {
+    (1..count.saturating_sub(1)).map(|level| format_ident!("N{level}")).collect()
+}
+
+/// The leg type parameters `B0, B1, …`, one per resolved column, empty for a single field whose
+/// leg **is** the root.
+fn builds(count: usize) -> Vec<Ident> {
+    match count == 1 {
+        true => Vec::new(),
+        false => (0..count).map(|index| format_ident!("B{index}")).collect(),
+    }
+}
+
+/// The `where` bounds descending the resolved tree: one [`Combine`] step per interior level, then
+/// one [`Build`] bound per leg fixing its item to the field type.
+///
+/// Every parameter is reached by a projection from `S`, which is what constrains them.
+fn descent(nodes: &[Ident], builds: &[Ident], fields: &[Field]) -> TokenStream {
+    let types = Field::types(fields);
+    let mut owner = quote! { <S as ::msca::query::Select<'a>>::Build };
+    let mut levels = Vec::with_capacity(fields.len());
+    for depth in (1..fields.len()).rev() {
+        let leg = &builds[depth];
+        let next = step(nodes, builds, depth);
+        levels.push(quote! { #owner: ::msca::Combine<L0 = #next, L1 = #leg>, });
+        owner = next;
+    }
+    let head = types[0];
+    match builds.is_empty() {
+        true => quote! { #owner: ::msca::query::Build<'a, Item = #head>, },
+        false => quote! { #(#levels)* #( #builds: ::msca::query::Build<'a, Item = #types>, )* },
+    }
+}
+
+/// The type owning everything below `depth`: the interior node one level down, or the first leg
+/// once the descent reaches the bottom of the tree.
+fn step(nodes: &[Ident], builds: &[Ident], depth: usize) -> TokenStream {
+    match depth == 1 {
+        true => builds[0].to_token_stream(),
+        false => nodes[depth - 2].to_token_stream(),
+    }
+}
+
+/// Walk the resolved tree from the root, binding each leg to its field identifier.
+///
+/// The node binding is shadowed at every level, so the descent needs no numbered temporaries; the
+/// bottom level binds both remaining legs at once.
+fn unpack(idents: &[&Ident], count: usize) -> TokenStream {
+    let head = idents[0];
+    let mut steps = Vec::with_capacity(count);
+    for depth in (1..count).rev() {
+        let leg = idents[depth];
+        let step = match depth == 1 {
+            true => quote! { let (#head, #leg) = ::msca::Combine::unpack(node); },
+            false => quote! { let (node, #leg) = ::msca::Combine::unpack(node); },
+        };
+        steps.push(step);
+    }
+    match count == 1 {
+        true => quote! { let #head = node; },
+        false => quote! { #(#steps)* },
+    }
+}
+
+/// Build one boxed stream per leg from the settled selection, which the last leg takes by move.
+fn build(idents: &[&Ident]) -> TokenStream {
+    let last = idents.len() - 1;
+    let steps = idents.iter().enumerate().map(|e| stream(e.1, e.0 == last));
+    quote! { #(#steps)* }
+}
+
+/// Build one leg into its boxed stream, cloning the selection unless this leg is the `last` one.
+fn stream(ident: &Ident, last: bool) -> TokenStream {
+    let mask = match last {
+        true => quote! { mask },
+        false => quote! { ::core::clone::Clone::clone(&mask) },
+    };
+    quote! { let #ident = ::std::boxed::Box::new(::msca::query::Build::build(#ident, #mask)?); }
+}
+
+/// Implement `Unfiltered`: open every named column with nothing attached, combine them, and hand
+/// the default conjunction to the same `Composite` a filtered read goes through.
+fn unfiltered(src: &Ident, reader: &Ident, fields: &[Field]) -> TokenStream {
+    let idents = Field::idents(fields);
+    let names = Field::names(fields);
+    let types = Field::types(fields);
+    let tree = tree(fields);
+    let bounds = stream_bounds(fields);
+    let head = idents[0];
+    let combined = idents[1..].iter().fold(
+        quote! { #head },
+        |acc, leg| quote! { ::msca::Join::and(#acc, #leg)? },
+    );
+    quote! {
+        impl<'a> ::msca::Unfiltered<'a> for #src
+        where
+            #bounds
+        {
+            fn unfiltered(
+                query: &'a ::msca::Query<'a>,
+            ) -> ::core::result::Result<Self::Src<'a>, ::msca::query::Error> {
+                #( let #idents = query.column::<#types>(#names)?; )*
+                let combined = #combined;
+                <#src as ::msca::Composite<'a, #tree>>::new(combined)
+            }
+        }
+
+        impl ::msca::Read for #src {
+            type Src<'a> = #reader<'a, #tree>;
+        }
+    }
+}
+
+/// The left-nested [`Conjunct`] tree over one column handle per field.
+fn tree(fields: &[Field]) -> TokenStream {
+    let types = Field::types(fields);
+    let mut legs =
+        types.iter().map(|ty| quote! { ::msca::query::Src<'a, #ty> }).collect::<Vec<TokenStream>>();
+    let head = legs.remove(0);
+    legs.into_iter().fold(head, |acc, leg| quote! { ::msca::Conjunct<#acc, #leg> })
+}
+
+/// The `where` bounds `Query::read` requires of each field: the field must be [`Read`] and
 /// [`Clone`], its column reader must [`Deserialize`] and [`Reader`], and the schema must unfold it.
-fn stream_bounds(fields: &[Field<'_>]) -> TokenStream {
+fn stream_bounds(fields: &[Field]) -> TokenStream {
     let types = Field::types(fields);
     quote! {
         #(
@@ -144,130 +287,86 @@ fn stream_bounds(fields: &[Field<'_>]) -> TokenStream {
     }
 }
 
-/// Implement [`Composite`] over a left-nested [`Join`] chain (filtered path), emitted only for two
-/// or more fields; a single-field type reads through the [`Query`] path alone, so this is empty.
+/// Implement [`Iterator`] for the reader: reconstruct one item per lockstep pull.
 ///
-/// Each leg is reached through the [`Join`] `a`/`b` fields in name-sorted order, its column name
-/// verified against the expected field, and its stream boxed into the reader.
-fn join(reader: &Ident, fields: &[Field<'_>]) -> TokenStream {
-    let count = fields.len();
-    if count < 2 {
-        return TokenStream::new();
-    }
+/// Every field stream is pulled **before** any outcome is inspected, so an item-free outcome from
+/// one column cannot leave its siblings a slot behind. [`None`] from any stream ends the composite
+/// stream; an error or an absent slot carries no item to rebuild from and propagates instead.
+///
+/// The per-slot verdicts fold through the tree the caller wrote: each node contributes its own
+/// [`Combine`] operator, so the whole fold monomorphizes to one native instruction per node.
+fn iterate(src: &Ident, reader: &Ident, fields: &[Field]) -> TokenStream {
     let idents = Field::idents(fields);
-    let names = Field::names(fields);
-    let legs = legs(count);
-    let chain = chain(&legs);
-    let bounds = join_bounds(&legs, fields);
-    let resolve = (0..count).map(|index| resolve(idents[index], &names[index], index, count));
+    let nodes = nodes(fields.len());
+    let bounds = ascent(&nodes, fields.len());
+    let keeps = Field::keeps(fields);
+    let verdict = verdict(&nodes, &keeps);
     quote! {
-        impl<'a, #(#legs),*> ::msca::Composite<'a, #chain> for #reader<'a>
+        impl<'a, N, #(#nodes,)*> ::core::iter::Iterator for #reader<'a, N>
         where
             #bounds
         {
-            fn new(src: &'a #chain) -> ::core::result::Result<Self, ::msca::query::Error> {
-                #( #resolve )*
-                ::core::result::Result::Ok(Self { #( #idents, )* })
-            }
-        }
-    }
-}
-
-/// The leg type parameters `L0, L1, …` for a join over `count` columns.
-fn legs(count: usize) -> Vec<Ident> {
-    (0..count).map(|index| format_ident!("L{index}")).collect()
-}
-
-/// Assemble the left-nested `Join<Join<…>, Ln>` type over the leg parameters.
-fn chain(legs: &[Ident]) -> TokenStream {
-    legs[1..].iter().fold(
-        quote! { L0 },
-        |chain, leg| quote! { ::msca::Join<#chain, #leg> },
-    )
-}
-
-/// The `where` bounds requiring each leg to be a [`Column`] yielding its name-sorted field type.
-fn join_bounds(legs: &[Ident], fields: &[Field<'_>]) -> TokenStream {
-    let types = Field::types(fields);
-    quote! {
-        #( #legs: ::msca::Column<Item = #types> + 'a, )*
-    }
-}
-
-/// Resolve one leg into its boxed column stream, binding it to the field `ident` after verifying
-/// the leg column `name` matches the expected field.
-///
-/// Stream acquisition is fallible – each leg constructs its per-buffer sources eagerly – so a
-/// framing error aborts composite assembly rather than surfacing mid-iteration.
-fn resolve(ident: &Ident, name: &str, index: usize, count: usize) -> TokenStream {
-    let access = access(index, count);
-    quote! {
-        let #ident = {
-            let leg = #access;
-            if ::msca::query::column::Adapter::root(leg).name != #name {
-                return ::core::result::Result::Err(
-                    ::msca::query::Error::Column { name: #name.into() },
-                );
-            }
-            ::std::boxed::Box::new(::msca::query::column::Adapter::stream(leg)?)
-        };
-    }
-}
-
-/// Build the `&src.a…b` field chain reaching the leg for field `index` in a left-nested join of
-/// `count` legs. Field `0` is the fully left-nested `a` chain; every later field reads the right
-/// `b` branch after ascending the remaining `a` levels.
-fn access(index: usize, count: usize) -> TokenStream {
-    let ascents = match index {
-        0 => count - 1,
-        _ => count - 1 - index,
-    };
-    let base = (0..ascents).fold(quote! { src }, |expr, _| quote! { #expr.a });
-    match index {
-        0 => quote! { &#base },
-        _ => quote! { &#base.b },
-    }
-}
-
-/// Implement [`Iterator`] and `Read` for the external type: reconstruct one item per lockstep pull.
-///
-/// - `next` pulls one outcome per field stream in lockstep.
-/// - [`None`] from any field stream terminates the composite stream.
-/// - Errors surface eagerly, rejecting the whole item.
-/// - The item is rebuilt from every field value; it is [`Include`] only if no field was excluded,
-///   otherwise [`Exclude`] carrying the same reconstructed item.
-fn iterate(src: &Ident, reader: &Ident, fields: &[Field<'_>]) -> TokenStream {
-    let idents = Field::idents(fields);
-    quote! {
-        impl<'a> ::core::iter::Iterator for #reader<'a> {
             type Item = ::msca::Outcome<#src>;
 
             fn next(&mut self) -> ::core::option::Option<::msca::Outcome<#src>> {
-                let mut include = true;
+                #( let #idents = ::core::iter::Iterator::next(&mut self.#idents)?; )*
                 #(
-                    let #idents = match ::core::iter::Iterator::next(&mut self.#idents)? {
-                        ::msca::Outcome::Error(error) => {
-                            return ::core::option::Option::Some(::msca::Outcome::Error(error));
+                    let (#keeps, #idents) = match #idents {
+                        ::msca::Outcome::Include(item) => (true, item),
+                        ::msca::Outcome::Exclude(item) => (false, item),
+                        ::msca::Outcome::Error(e) => {
+                            return ::core::convert::Into::into(::msca::Outcome::Error(e));
                         }
-                        ::msca::Outcome::Include(#idents) => #idents,
-                        ::msca::Outcome::Exclude(#idents) => {
-                            include = false;
-                            #idents
+                        ::msca::Outcome::Absent => {
+                            return ::core::convert::Into::into(::msca::Outcome::Absent);
                         }
                     };
                 )*
-                let row = #src { #( #idents, )* };
-                ::core::option::Option::Some(match include {
-                    true => ::msca::Outcome::Include(row),
-                    false => ::msca::Outcome::Exclude(row),
-                })
+                let item = #src { #( #idents, )* };
+                let outcome = match #verdict {
+                    true => ::msca::Outcome::Include(item),
+                    false => ::msca::Outcome::Exclude(item),
+                };
+                ::core::convert::Into::into(outcome)
             }
         }
-
-        impl ::msca::Read for #src {
-            type Src<'a> = #reader<'a>;
-        }
     }
+}
+
+/// The `where` bounds ascending the reader tree parameter: one [`Combine`] step per interior level.
+///
+/// Only the nodes appear, because the fold reads no leg type; a single field folds nothing at all.
+fn ascent(nodes: &[Ident], count: usize) -> TokenStream {
+    let mut owner = quote! { N };
+    let mut levels = Vec::with_capacity(count);
+    for depth in (1..count).rev() {
+        let next = match depth == 1 {
+            true => TokenStream::new(),
+            false => nodes[depth - 2].to_token_stream(),
+        };
+        let level = match depth == 1 {
+            true => quote! { #owner: ::msca::Combine, },
+            false => quote! { #owner: ::msca::Combine<L0 = #next>, },
+        };
+        levels.push(level);
+        owner = next;
+    }
+    quote! { #(#levels)* }
+}
+
+/// Fold every per-slot verdict into one, innermost pair first, applying each node operator in turn.
+fn verdict(nodes: &[Ident], keeps: &[Ident]) -> TokenStream {
+    let head = &keeps[0];
+    let mut folded = quote! { #head };
+    for depth in 1..keeps.len() {
+        let keep = &keeps[depth];
+        let node = match depth == keeps.len() - 1 {
+            true => quote! { N },
+            false => nodes[depth - 1].to_token_stream(),
+        };
+        folded = quote! { <#node as ::msca::Combine>::combine(#folded, #keep) };
+    }
+    folded
 }
 
 /* --------------------------------------------------------------------------------------- Tests */
