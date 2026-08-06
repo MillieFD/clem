@@ -1139,13 +1139,18 @@ impl<I> IsOption for Option<I> {
 /// iteration and reconstruction to progress fearlessly without additional runtime overhead.
 #[doc(hidden)] // Reachable through the #[derive(Read)] macro; not intended as a stable API
 pub trait Composite<'q, S>: Sized {
-    /// Assemble a new **composite reader** from the provided [`source`](S).
+    /// The reader assembling [`Self`] from one stream per column.
+    ///
+    /// Parameterised by the source [`S`], so a combination drives its per-slot verdict from the
+    /// join tree at compile time rather than carrying the operators as data.
+    type Reader: Iterator<Item = Outcome<Self>>;
+
+    /// Assemble the reader from `src`.
     ///
     /// ### Errors
     ///
     /// Returns [`query::Error`] if a required column is missing or its type is incompatible.
-    // NOTE: src can be a Query (unfiltered) or Join (filtered)
-    fn new(src: &'q S) -> Result<Self, query::Error>;
+    fn new(src: S) -> Result<Self::Reader, query::Error>;
 }
 
 /* --------------------------------------------------------------------------------------- Tests */
