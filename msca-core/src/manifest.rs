@@ -11,7 +11,7 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 #![doc = include_str!("../../doc/manifest.md")]
 
 use std::cmp::Ordering;
-use std::collections::{BTreeMap, Bound};
+use std::collections::{BTreeMap, BTreeSet, Bound};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::num::NonZeroU64;
@@ -23,9 +23,10 @@ use minicbor::{CborLen, Decode, Encode};
 use smol::io::{AsyncRead, AsyncReadExt, AsyncSeek};
 
 use crate::io::{Checksum, Deserializer, Register};
-use crate::schema::{number, Type};
+use crate::read::{Evaluate, Outcome, Read, Reader};
+use crate::schema::{self, Type, Unfolder, number};
 use crate::segment::{Header, Segment, Variant};
-use crate::{io, Deserialize, Sector, Serialize};
+use crate::{Deserialize, Sector, Serialize, io, query};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -216,19 +217,24 @@ impl Schema {
             .values()
             .next()
             .into_iter()
-            .flat_map(|column| &column.buffers)
+            .flat_map(|column| column.buffers.iter())
             .map(Buffer::count)
             .sum()
     }
 }
 
-/// A minimal column **descriptor** wrapping a collection of [`Buffer`] descriptors.
+/// A minimal column **descriptor** wrapping its [`Buffer`] descriptors as a sector-ordered set.
 ///
 /// This type does **not** contain the actual buffer data; it is a lightweight descriptor for column
 /// discovery and access without holding buffer contents in memory. Data is stored via one or more
-/// on-disk data segments, each of which contains a buffer for this column.
+/// on-disk data segments, each of which contributes one buffer to this column.
 ///
-/// [`Vec`] order in-memory is **not** guaranteed to reflect [`Sector`] order on-disk.
+/// Descriptors are held in a [`BTreeSet`] ordered by on-disk [`Sector`], which is monotonic in
+/// write order, so iterating the set yields segment order and stores no ordinal on disk. A
+/// [query](crate::Query) borrows the set and tracks its own candidates in a positional selection
+/// mask, so bit `k` selects the buffer written by the `k`-th segment. Every column of one
+/// [`Schema`] receives one buffer per segment, so that coordinate is shared across the query and
+/// two masks intersect directly.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Eq, Encode, Decode, CborLen)]
 #[non_exhaustive] // rejects external struct literal construction
@@ -236,13 +242,56 @@ pub struct Column {
     /// The [`Type`] of values contained within this column.
     #[n(0)]
     pub ty: Type,
-    /// List of [`Buffer`] descriptors for this column across all data segments.
-    #[cbor(n(1), skip_if = "Vec::is_empty")]
+    /// [`Buffer`] descriptors for this column, ordered by [`Sector`] across all data segments.
+    #[cbor(n(1), skip_if = "BTreeSet::is_empty")]
     #[cfg_attr(
         feature = "serde",
-        serde(default, skip_serializing_if = "Vec::is_empty")
+        serde(default, skip_serializing_if = "BTreeSet::is_empty")
     )]
-    pub buffers: Vec<Buffer>,
+    pub buffers: BTreeSet<Buffer>,
+}
+
+impl Column {
+    /// Map one on-disk [`Schema`] entry to the borrowed entry a [query](query::Query) holds.
+    ///
+    /// The tuple is the sanctioned shape here because [`Iterator::map`] collects pairs directly
+    /// into the query [`BTreeMap`]; naming a struct would force a closure at the call site.
+    pub(crate) const fn map<'m>(e: (&'m String, &'m Self)) -> (&'m str, &'m Self) {
+        (e.0.as_str(), e.1)
+    }
+
+    /// Returns [`Error::Type`][1] if this column does not hold items of type [`I`]; otherwise
+    /// returns [`self`](Column) so a caller chains straight into the read it was verifying for.
+    ///
+    /// A [query](query::Query) verifies once when a handle opens and then reads fearlessly, so the
+    /// error belongs to [query] even though the check reads a [manifest](self) field. That
+    /// direction already exists: [`Composite::new`][2] returns the same error type.
+    ///
+    /// [1]: query::Error::Type
+    /// [2]: crate::read::Composite::new
+    pub(crate) fn exact<I>(&self) -> Result<&Self, query::Error>
+    where
+        schema::Schema: Unfolder<I>,
+    {
+        let expect = schema::Schema::unfold();
+        match self.ty == expect {
+            true => Ok(self),
+            false => query::Error::Type { expect, actual: self.ty.clone() }.into(),
+        }
+    }
+
+    /// The number of committed items across every [`Buffer`] written for this [`Column`].
+    pub(crate) fn count(&self) -> u64 {
+        self.buffers.iter().map(Buffer::count).sum()
+    }
+
+    /// The number of on-disk [buffers](Buffer) written for this [`Column`], one per data segment.
+    ///
+    /// Distinct from [`count`](Self::count), which sums the **logical** items those buffers hold;
+    /// a [`Compact`](Buffer::Compact) buffer contributes one to this and its full run to that.
+    pub(crate) fn size(&self) -> usize {
+        self.buffers.len()
+    }
 }
 
 impl PartialEq for Column {
@@ -274,7 +323,7 @@ impl Hash for Column {
 
 impl From<Type> for Column {
     fn from(ty: Type) -> Self {
-        Column { ty, buffers: Vec::new() }
+        Column { ty, buffers: BTreeSet::new() }
     }
 }
 
