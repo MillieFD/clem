@@ -71,8 +71,8 @@ use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
 
 use crate::io::{Deserialize, Deserializer, Error, SizedBuf};
+use crate::query;
 use crate::schema::number;
-use crate::{Accumulate, query};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -718,10 +718,283 @@ pub trait Evaluate<I = Self>: Sized {
 
 /* --------------------------------------------------------------- Evaluate Trait Implementation */
 
-impl<I> Evaluate for I
-where
-    Vec<I>: Accumulate<I>,
-{
+impl Evaluate for bool {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for char {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for f32 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for f64 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for i8 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for i16 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for i32 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for i64 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for i128 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for u8 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for u16 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for u32 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for u64 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for u128 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroI8 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroI16 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroI32 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroI64 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroI128 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroU8 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroU16 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroU32 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroU64 {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl Evaluate for num::NonZeroU128 {
     fn evaluate<F>(self, filter: F) -> Outcome<Self>
     where
         F: Fn(&Self) -> bool,
@@ -746,6 +1019,23 @@ impl Evaluate for String {
 }
 
 impl Evaluate for &str {
+    fn evaluate<F>(self, filter: F) -> Outcome<Self>
+    where
+        F: Fn(&Self) -> bool,
+    {
+        match filter(&self) {
+            true => Outcome::Include(self),
+            false => Outcome::Exclude(self),
+        }
+    }
+}
+
+impl<I> Evaluate<Self> for Option<I> {
+    /// Assess the **whole** optional item, so a structural test sees an absent item instead of
+    /// having it excluded before the predicate runs.
+    ///
+    /// This is the counterpart to [`Evaluate<I>`](Evaluate), which unwraps to the inner operand;
+    /// the two never overlap because they differ in the trait parameter.
     fn evaluate<F>(self, filter: F) -> Outcome<Self>
     where
         F: Fn(&Self) -> bool,
@@ -969,9 +1259,9 @@ mod tests {
     fn evaluate_projects_the_operand() {
         let plain_in = 7u32.evaluate(|op| *op == 7);
         let plain_out = 7u32.evaluate(|op| *op == 8);
-        let some_in = Some(7u32).evaluate(|op| *op == 7);
-        let some_out = Some(7u32).evaluate(|op| *op == 8);
-        let absent = None::<u32>.evaluate(|op| *op == 7);
+        let some_in = Some(7u32).evaluate(|op: &u32| *op == 7);
+        let some_out = Some(7u32).evaluate(|op: &u32| *op == 8);
+        let absent = None::<u32>.evaluate(|op: &u32| *op == 7);
         assert!(matches!(plain_in, Outcome::Include(7)));
         assert!(matches!(plain_out, Outcome::Exclude(7)));
         assert!(matches!(some_in, Outcome::Include(Some(7))));
