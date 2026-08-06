@@ -452,16 +452,39 @@ impl Buffer {
         }
     }
 
-    /// Returns `true` if [`self`](Buffer) is provably disjoint from the specified [`Bounds`][1].
+    /// Returns `true` if the statistic span `min ..= max` is provably disjoint from the specified
+    /// [`Bounds`][1], so no item recorded between them can satisfy the predicate.
     ///
-    /// - [`Buffer::Detailed`] is evaluated using `min` and `max` statistics resolved from disk.
-    /// - [`Buffer::Compact`] and [`Buffer::Basic`] carry no statistics; never provably disjoint.
+    /// The comparison is pure: both statistics arrive already [deserialized](Deserialize), so a
+    /// caller resolves them from disk **once** and tests every candidate against the same pair. A
+    /// point range decides membership exactly, reducing to `min <= item` and `max >= item`.
     ///
-    /// A compact buffer [`Sector`] spans exactly **one** on-disk item that is resolved and
-    /// evaluated at read-time. The compact body may contain a [`Composite`][2] item that is
-    /// computationally-expensive to [`Deserialize`]. Compact buffer exclusion is therefore assessed
-    /// through the common [`Reader`](crate::Reader) pipeline instead of the bare statistic path
-    /// used here. This behaviour may change in future releases.
+    /// [1]: RangeBounds
+    pub(crate) fn disjoint<I, B>(min: &I, max: &I, bounds: &B) -> bool
+    where
+        B: RangeBounds<I>,
+        I: PartialOrd,
+    {
+        let above = match bounds.end_bound() {
+            Bound::Included(inc) => min > inc,
+            Bound::Excluded(exc) => min >= exc,
+            Bound::Unbounded => false,
+        };
+        let below = match bounds.start_bound() {
+            Bound::Included(inc) => max < inc,
+            Bound::Excluded(exc) => max <= exc,
+            Bound::Unbounded => false,
+        };
+        above || below
+    }
+
+    /// Returns `true` if [`self`](Buffer) may hold an item satisfying `predicate`, resolving the
+    /// recorded statistics from the memory map **once** and handing both to it.
+    ///
+    /// A [`Compact`](Buffer::Compact) or [`Basic`](Buffer::Basic) buffer carries no statistics and
+    /// is never pruned here, so `predicate` is never called for either. The complementary probe is
+    /// [`test`](Self::test), which decides a compact buffer exactly and abstains for the rest, so
+    /// the two together decide every variant without ever deciding one twice.
     ///
     /// ### ⚠️ Safety
     ///
@@ -470,35 +493,45 @@ impl Buffer {
     ///
     /// ### Errors
     ///
-    /// - [`Error::Truncated`][4] if a statistic sector extends beyond the memory map
-    /// - [`io::Error`] if an error occurs while [deserializing](Deserialize) a statistic from disk.
+    /// Returns [`io::Error`] if a statistic sector cannot be resolved from the memory map.
     ///
-    /// [1]: RangeBounds
-    /// [2]: crate::read::Composite
     /// [3]: https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html
-    /// [4]: io::Error::Truncated
-    pub(crate) unsafe fn disjoint<I, B>(&self, bounds: &B, mmap: &Mmap) -> Result<bool, io::Error>
+    pub(crate) fn test<I, P>(&self, predicate: P, mmap: &Mmap) -> Result<bool, io::Error>
     where
-        B: RangeBounds<I>,
+        P: FnOnce(&I, &I) -> bool,
         I: for<'de> Deserialize<'de, Ok = I> + PartialOrd,
     {
         let (min, max) = match self {
             Buffer::Detailed { min, max, .. } => (min, max),
-            Buffer::Compact { .. } | Buffer::Basic { .. } => return Ok(false),
+            Buffer::Compact { .. } | Buffer::Basic { .. } => return Ok(true),
         };
         let min: I = min.slice(mmap)?.deserialize_into()?;
         let max: I = max.slice(mmap)?.deserialize_into()?;
-        let above = match bounds.end_bound() {
-            Bound::Included(inc) => &min > inc,
-            Bound::Excluded(exc) => &min >= exc,
-            Bound::Unbounded => false,
-        };
-        let below = match bounds.start_bound() {
-            Bound::Included(inc) => &max < inc,
-            Bound::Excluded(exc) => &max <= exc,
-            Bound::Unbounded => false,
-        };
-        Ok(above || below)
+        let keep = predicate(&min, &max);
+        Ok(keep)
+    }
+
+    pub(crate) fn test_exact<'m, I, O, F>(
+        &self,
+        test: &F,
+        mmap: &'m Mmap,
+    ) -> Result<bool, io::Error>
+    where
+        I: Read + Evaluate<O> + 'm,
+        I::Src<'m>: Deserialize<'m, Ok = I::Src<'m>> + Reader<'m, I>,
+        F: Fn(&O) -> bool,
+    {
+        match self {
+            Buffer::Compact { .. } => {
+                let mut bytes = self.sector().slice(mmap)?;
+                let src = I::Src::deserialize(&mut bytes)?;
+                let item = src.iter()?.next().transpose()?;
+                let repeated =
+                    item.ok_or(io::Error::Truncated { expected: 1, actual: usize::MIN })?;
+                Ok(matches!(repeated.evaluate(test), Outcome::Include(..)))
+            }
+            Buffer::Basic { .. } | Buffer::Detailed { .. } => Ok(true),
+        }
     }
 }
 
@@ -565,6 +598,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Not;
+
     use memmap2::MmapMut;
 
     use super::*;
@@ -628,7 +663,8 @@ mod tests {
             // SAFETY: minicbor::encode is infallible when writing to &mut [u8]
             minicbor::encode(&buf, &mut sink).expect("Infallible buffer CBOR encode failed");
             let out: Buffer = minicbor::decode(&bytes).expect("Buffer CBOR decode failed");
-            assert_eq!(out, buf);
+            // `Buffer` equality is sector-only, so compare every field through `Debug` instead.
+            assert_eq!(format!("{out:?}"), format!("{buf:?}"));
         }
     }
 
@@ -646,10 +682,27 @@ mod tests {
             min: Sector::new(0u64, width).expect("Sector::new failed"),
             max: Sector::new(width, width).expect("Sector::new failed"),
         };
-        // 100..200 is entirely above [10, 30] → buffer is removed
-        assert!(unsafe { detailed.disjoint(&(100u32..200), &mmap) }.expect("Disjoint failed"));
-        // 20..40 straddles [10, 30] → buffer is retained
-        assert!(!unsafe { detailed.disjoint(&(20u32..40), &mmap) }.expect("Disjoint failed"))
+        let above = |a: &u32, b: &u32| Buffer::disjoint(a, b, &(100u32..200)).not();
+        let over = |a: &u32, b: &u32| Buffer::disjoint(a, b, &(20u32..40)).not();
+        // SAFETY: the statistic sectors span serialized `u32` items matching the requested type
+        let high = detailed.test(above, &mmap).expect("Assess failed");
+        // SAFETY: the statistic sectors span serialized `u32` items matching the requested type
+        let mid = detailed.test(over, &mmap).expect("Assess failed");
+        assert!(!high); // 100..200 sits entirely above [10, 30]
+        assert!(mid); // 20..40 straddles [10, 30]
+    }
+
+    /// [`disjoint`](Buffer::disjoint) is pure, so every bound kind is decided against one already
+    /// resolved statistic pair: a point range reduces to `min <= item` and `max >= item`.
+    #[test]
+    fn disjoint_decides_every_bound_kind() {
+        let below = Buffer::disjoint(&10u32, &30, &(..10u32)); // exclusive end at min
+        let touch = Buffer::disjoint(&10u32, &30, &(..=10u32)); // inclusive end at min
+        let open = Buffer::disjoint(&10u32, &30, &(40u32..)); // unbounded end, start above max
+        let full = Buffer::disjoint(&10u32, &30, &(..)); // unbounded both ways
+        let point = Buffer::disjoint(&10u32, &30, &(20u32..=20)); // a candidate inside the span
+        assert!(below && open); // provably empty of matches
+        assert!(!touch && !full && !point); // may hold a match, so the buffer is retained
     }
 
     /// [`Compact`](Buffer::Compact) and [`Basic`](Buffer::Basic) descriptors carry no statistics
@@ -664,8 +717,9 @@ mod tests {
             Buffer::Basic { buffer, count },
         ] {
             // SAFETY: both variants return before any type-dependent statistic is deserialized
-            let disjoint = unsafe { buf.disjoint(&(10u32..20), &mmap) }.expect("Disjoint failed");
-            assert!(!disjoint);
+            let span = |a: &u32, b: &u32| Buffer::disjoint(a, b, &(10u32..20)).not();
+            let keep = buf.test(span, &mmap).expect("Assess failed");
+            assert!(keep);
         }
     }
 
@@ -673,27 +727,28 @@ mod tests {
     /// three descriptor variants.
     #[test]
     fn schema_count_sums_every_buffer() {
-        let sector = Sector::new(8u64, 16u64).expect("Sector::new failed");
+        // Distinct sectors, one per segment, so the sector-ordered set keeps all three buffers.
+        let sector = |offset| Sector::new(offset, 16u64).expect("Sector::new failed");
         let detailed = Buffer::Detailed {
-            buffer: sector,
+            buffer: sector(8),
             count: NonZeroU64::new(3).expect("Count is zero"),
-            min: sector,
-            max: sector,
+            min: sector(8),
+            max: sector(8),
         };
         let compact = Buffer::Compact {
-            buffer: sector,
+            buffer: sector(24),
             count: NonZeroU64::new(2).expect("Count is zero"),
         };
         let basic = Buffer::Basic {
-            buffer: sector,
+            buffer: sector(40),
             count: NonZeroU64::new(4).expect("Count is zero"),
         };
         let column = Column {
             ty: Type::U32,
-            buffers: vec![detailed, compact, basic],
+            buffers: BTreeSet::from([detailed, compact, basic]),
         };
         let schema = Schema {
-            sector,
+            sector: sector(8),
             columns: BTreeMap::from([(String::from("v"), column)]),
         };
         assert_eq!(schema.count(), 9);
