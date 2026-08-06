@@ -1114,6 +1114,27 @@ impl<I> IsOption for Option<I> {
     }
 }
 
+/* ----------------------------------------------------------------- Unfiltered Trait Definition */
+
+/// The default source for an item read with no filter attached: every column it names, combined.
+///
+/// An unfiltered read is a conjunction of every column with nothing attached, so it goes through
+/// the same tree as a filtered one rather than assembling the streams by a second route.
+///
+/// Implemented by `#[derive(Read)]`, which alone knows the field list. The reader is [`Read::Src`],
+/// which is what that associated type means for a composite: the source items deserialize from.
+pub trait Unfiltered<'q>: Read<Src<'q>: Iterator<Item = Outcome<Self>>> + Sized {
+    /// Open every column of the [`Query`](query::Query), combine them, and assemble the reader.
+    ///
+    /// The combination is handed to [`Composite::new`], so an unfiltered read reaches the streams
+    /// through the same tree a filtered one does rather than by a second route.
+    ///
+    /// ### Errors
+    ///
+    /// Returns [`query::Error`] if a named column is missing or its type is incompatible.
+    fn unfiltered(query: &'q query::Query<'q>) -> Result<Self::Src<'q>, query::Error>;
+}
+
 /* ------------------------------------------------------------------ Composite Trait Definition */
 
 /// A **composite reader** assembled from multiple [column iterators](Reader::iter).
