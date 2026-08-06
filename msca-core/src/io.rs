@@ -235,7 +235,7 @@ impl Add for Sector {
     fn add(self, rhs: Self) -> Self::Output {
         let offset = self.offset.min(rhs.offset);
         let size = self.size.checked_add(rhs.size.get())?;
-        Some(Self { offset, size })
+        Self { offset, size }.into()
     }
 }
 
