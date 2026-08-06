@@ -263,7 +263,7 @@ impl Dataset {
             .ok_or_else(|| query::Error::Column { name: name.into() })?
             .columns
             .iter()
-            .map(query::Column::map) // Clone each entry
+            .map(manifest::Column::map) // borrow the on-disk descriptors; nothing is copied
             .collect();
         Ok(Query {
             mmap: self.mmap.clone(), // Inexpensive Arc Clone
@@ -311,7 +311,7 @@ mod tests {
     use crate::io::{File, SizedBuf};
     use crate::manifest::Buffer;
     use crate::manifest::Error::{Collision, NotFound};
-    use crate::query::column::Column;
+    use crate::query::Column;
     use crate::schema::{self, Type, number};
     use crate::segment::Variant;
     use crate::{Bin, Columns, Describe, Serialize, accumulate};
@@ -357,15 +357,10 @@ mod tests {
     }
 
     impl Describe<Measurement> for MeasurementAccumulator {
-        fn buffers(
-            &self,
-            offset: u64,
-            seg: u64,
-            columns: &mut Columns,
-        ) -> Result<u64, schema::Error> {
+        fn buffers(&self, offset: u64, columns: &mut Columns) -> Result<u64, schema::Error> {
             // Columns are walked in name-sorted order: `pressure` precedes `temperature`.
-            let offset = self.pressure.buffers(offset, seg, columns)?;
-            self.temperature.buffers(offset, seg, columns)
+            let offset = self.pressure.buffers(offset, columns)?;
+            self.temperature.buffers(offset, columns)
         }
     }
 
@@ -631,7 +626,7 @@ mod tests {
             .map(|(name, _)| {
                 let query = guard.query(name).expect("query failed");
                 let column = query.column::<u32>("pressure").expect("column failed");
-                let items = column.read().expect("read failed");
+                let items = column.iter().expect("read failed");
                 (
                     *name,
                     items.collect::<Result<Vec<u32>, _>>().expect("collect failed"),
