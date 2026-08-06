@@ -22,7 +22,8 @@ mod data;
 mod read;
 
 use proc_macro::TokenStream;
-use syn::{parse_macro_input, Data, DataStruct, DeriveInput, Fields, Ident, Type};
+use quote::format_ident;
+use syn::{Data, DataStruct, DeriveInput, Fields, Ident, Type, parse_macro_input};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -70,6 +71,14 @@ impl<'a> Field<'a> {
     fn names(fields: &[Self]) -> Vec<String> {
         let name = |field: &Self| field.ident.to_string();
         fields.iter().map(name).collect()
+    }
+
+    /// Returns the local [identifier](Ident) holding the per-slot verdict of each [`Field`].
+    ///
+    /// A composite reader binds the verdict alongside the item it came from, so each needs a name
+    /// that cannot collide with the field identifier already bound in the same scope.
+    fn keeps(fields: &[Self]) -> Vec<Ident> {
+        fields.iter().map(|field| format_ident!("keep_{}", field.ident)).collect()
     }
 }
 
