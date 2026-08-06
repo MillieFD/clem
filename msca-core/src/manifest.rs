@@ -259,7 +259,7 @@ impl Ord for Column {
 
 impl PartialOrd for Column {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
+        self.cmp(other).into()
     }
 }
 
