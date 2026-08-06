@@ -26,7 +26,7 @@ use memmap2::Mmap;
 
 use crate::io::{File, Register};
 use crate::query::{self, Query};
-use crate::read::{Composite, Outcome, Read};
+use crate::read::Unfiltered;
 use crate::schema::number;
 use crate::segment::Segment;
 use crate::{Accumulate, Accumulator, Data, Error, Schema, io, manifest};
@@ -200,12 +200,12 @@ impl Dataset {
     where
         N: Unsigned,
         S: IntoIterator<Item = I>,
-        I: Data + Read + Eq + Hash + 'static,
-        for<'q> I::Src<'q>: Composite<'q, Query> + Iterator<Item = Outcome<I>> + 'q,
+        I: Data + Eq + Hash + 'static,
+        I: for<'q> Unfiltered<'q>,
     {
         let mut acc = self.schema::<I>(name).await?;
         let query = self.query(name)?;
-        let mut map = query.unique::<I, N>()?;
+        let mut map = query.indexed::<I, N>()?;
         let count = query.count(); // initial number of items (includes duplicates)
         let mut next = N::try_from(count).ok();
         let items = items.into_iter();
