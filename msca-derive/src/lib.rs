@@ -81,7 +81,7 @@ impl<'a> Field<'a> {
 /// Returns [`syn::Error`] if the input is not supported, has unnamed fields, or has no fields.
 ///
 /// [1]: std::collections::BTreeMap
-fn fields(input: &'_ DeriveInput) -> Result<Vec<Field<'_>>, syn::Error> {
+fn fields<'a>(input: &'a DeriveInput) -> Result<Vec<Field<'a>>, syn::Error> {
     let error = |msg| Err(syn::Error::new_spanned(input, msg));
     let named = match &input.data {
         Data::Struct(DataStruct { fields: Fields::Named(named), .. }) => &named.named,
