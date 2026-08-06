@@ -892,12 +892,7 @@ impl<I> Describe<I> for Buffer<I>
 where
     I: BitMatch + Clone + Unfold + Send + Sync + 'static,
 {
-    fn buffers(
-        &self,
-        offset: u64,
-        segment: u64,
-        columns: &mut Columns,
-    ) -> Result<u64, schema::Error> {
+    fn buffers(&self, offset: u64, columns: &mut Columns) -> Result<u64, schema::Error> {
         if let Some(column) = columns.next() {
             let sector = Sector {
                 offset: offset.checked_add(SizedBuf::<I>::PREFIX).ok_or(Error::Zero)?,
@@ -905,7 +900,9 @@ where
             };
             let count = self.count().try_into().map_err(Error::from)?;
             let buf = self.describe(sector, count)?;
-            column.buffers.push(buf);
+            // Buffers are ordered by sector, monotonic in write order, so the set position is the
+            // segment ordinal; no key is stored on disk.
+            column.buffers.insert(buf);
             sector.next().ok_or(Error::Zero)?.align().map_err(Into::into)
         } else {
             schema::Error::NotFound.into() // expected column is not present
