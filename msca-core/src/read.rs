@@ -772,16 +772,31 @@ where
 /// Refer to [std::option] for more details.
 #[doc(hidden)] // pub required for filter trait bounds; not intended as a stable API
 pub trait IsOption {
+    /// The item carried when the option is [`Some`].
+    type Item;
+
     /// Returns `true` if the option is [`Some`].
     fn is_some(&self) -> bool;
 
     /// Returns `true` if the option is [`None`].
     fn is_none(&self) -> bool;
+
+    /// Consume the option and yield the item it carries, if any.
+    ///
+    /// A structural filter narrows the item type past the option, so the stream carries
+    /// [`Item`](Self::Item) and an absent slot becomes [`Outcome::Absent`].
+    fn item(self) -> Option<Self::Item>;
 }
 
 /* --------------------------------------------------------------- IsOption Trait Implementation */
 
 impl<I> IsOption for Option<I> {
+    type Item = I;
+
+    fn item(self) -> Option<I> {
+        self
+    }
+
     fn is_some(&self) -> bool {
         self.is_some()
     }
