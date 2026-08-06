@@ -192,8 +192,8 @@ impl Sector {
     /// a `NaN` statistic satisfies no bounded predicate, so [`disjoint`][1] proves nothing and the
     /// buffer is retained rather than pruned.
     ///
-    /// [1]: crate::manifest::Buffer::disjoint
-    pub(crate) fn locate<I, S, O>(items: S, width: usize, cmp: O) -> Option<Self>
+    /// [1]: manifest::Buffer::disjoint
+    pub(crate) fn find<I, S, O>(items: S, width: usize, cmp: O) -> Option<Self>
     where
         S: IntoIterator<Item = Option<I>>,
         O: Fn(&I, &I) -> bool,
