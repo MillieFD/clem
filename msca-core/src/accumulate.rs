@@ -2231,14 +2231,18 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Not;
+
     use memmap2::MmapMut;
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
     use crate::schema::Schema;
 
-    /// [describe](Accumulate::describe) `acc` over `count` items at body offset zero, so each located
-    /// statistic offset equals its `element index × width`.
+    /* ---------------------------------------------------------------------------- Shared State */
+
+    /// [describe](Accumulate::describe) `acc` over `count` items at body offset zero, so each
+    /// located statistic offset equals its `element index × width`.
     fn describe<A>(acc: &A, count: u64) -> manifest::Buffer
     where
         A: Descriptor + Serialize,
@@ -2249,7 +2253,7 @@ mod tests {
         acc.describe(sector, count).expect("Describe failed")
     }
 
-    /// The `min` and `max` statistic offsets of a [`Detailed`](manifest::Buffer::Detailed) descriptor.
+    /// The `min` and `max` statistic offsets of a [`Detailed`](manifest::Buffer::Detailed) buffer.
     fn stats(buffer: &manifest::Buffer) -> [u64; 2] {
         let manifest::Buffer::Detailed { min, max, .. } = buffer else {
             panic!("Buffer descriptor is not Detailed")
@@ -2257,8 +2261,22 @@ mod tests {
         [min.offset, max.offset]
     }
 
-    /// [`Accumulate::describe`] locates the extreme items of a populated [`Vec`] by element position;
-    /// each statistic spans exactly one serialized item.
+    /* ------------------------------------------------------------------------------ Unit Tests */
+
+    /// A leaf [`Buffer`] accumulator is [`Send`] and [`Sync`] for every column layout – a
+    /// fixed-width [`u32`], an unsized [`String`], and an optional column – so a worker moves a
+    /// cloned accumulator onto its own thread and the write path borrows it across an `await` on a
+    /// multi-threaded executor. [`Data::Acc`](crate::Data::Acc) requires both bounds, so the whole
+    /// composite tree inherits them.
+    #[test]
+    fn accumulator_is_send_and_sync() {
+        assert_impl_all!(Buffer<u32>: Send, Sync);
+        assert_impl_all!(Buffer<String>: Send, Sync);
+        assert_impl_all!(Buffer<Option<u32>>: Send, Sync);
+    }
+
+    /// [`Accumulate::describe`] locates the extreme items of a populated [`Vec`] by element
+    /// position; each statistic spans exactly one serialized item.
     #[test]
     fn vec_locates_extremes() {
         let data: Vec<u32> = vec![3, 1, 2];
@@ -2278,8 +2296,8 @@ mod tests {
         assert!(matches!(buffer, manifest::Buffer::Basic { .. }));
     }
 
-    /// Statistics follow standard [`PartialOrd`] semantics: no ordering is invented for `NaN`, which
-    /// compares `false` against every item and therefore never displaces a real extreme.
+    /// Statistics follow standard [`PartialOrd`] semantics: no ordering is invented for `NaN`,
+    /// which compares `false` against every item and therefore never displaces a real extreme.
     #[test]
     fn vec_partial_ord_keeps_real_extremes_past_nan() {
         let data = vec![1.0, f64::NAN, 3.0, 2.0];
@@ -2301,9 +2319,9 @@ mod tests {
         mmap[..bytes.len()].copy_from_slice(&bytes);
         let mmap = mmap.make_read_only().expect("Read-only conversion failed");
         // SAFETY: the statistic sectors span serialized `f64` items matching the requested type
-        let disjoint =
-            unsafe { buffer.disjoint(&(10.0f64..20.0), &mmap) }.expect("Disjoint failed");
-        assert!(!disjoint); // NaN proves nothing; the buffer is retained rather than pruned
+        let span = |a: &f64, b: &f64| manifest::Buffer::disjoint(a, b, &(10.0f64..20.0)).not();
+        let keep = buffer.test(span, &mmap).expect("Assess failed");
+        assert!(keep); // NaN proves nothing; the buffer is retained rather than pruned
     }
 
     /// A float column always records statistics; `NaN` is an ordinary item under [`PartialOrd`] and
@@ -2311,10 +2329,8 @@ mod tests {
     #[test]
     fn vec_nan_still_detailed() {
         let data = vec![f64::NAN, f64::NAN];
-        assert!(matches!(
-            describe(&data, 2),
-            manifest::Buffer::Detailed { .. }
-        ));
+        let buffer = describe(&data, 2);
+        assert!(matches!(buffer, manifest::Buffer::Detailed { .. }));
     }
 
     /// [`Accumulate::describe`] resolves each located statistic onto its **absolute** position by
@@ -2372,7 +2388,7 @@ mod tests {
         let body = Sector::new(64u64, size).expect("Sector::new failed");
         let count = NonZeroU64::new(4).expect("Count is zero");
         let out = acc.describe(body, count).expect("Describe failed");
-        let manifest::Buffer::Detailed { buffer, count, min, max } = out else {
+        let manifest::Buffer::Detailed { buffer, count, min, max, .. } = out else {
             panic!("Buffer descriptor is not Detailed")
         };
         assert_eq!(buffer, body); // whole body, spanning every item
@@ -2420,8 +2436,8 @@ mod tests {
 
     /// A `bool` column holds only `true` and `false`, so the descriptor follows from uniformity
     /// alone: a uniform run stays [`Lite`](Buffer::Compact) and is described as
-    /// [`Compact`](manifest::Buffer::Compact), while a mixed column materialises and is described as
-    /// [`Basic`](manifest::Buffer::Basic).
+    /// [`Compact`](manifest::Buffer::Compact), while a mixed column materialises and is described
+    /// as [`Basic`](manifest::Buffer::Basic).
     #[test]
     fn bool_column_descriptors() {
         let describe = |items: &[bool]| {
@@ -2429,20 +2445,14 @@ mod tests {
             items.iter().for_each(|&v| acc.push(v));
             let mut col = Column::from(bool::with_unfolder::<Schema>());
             acc.buffers(0, &mut std::iter::once(&mut col)).expect("Buffers failed");
-            col.buffers.remove(0)
+            col.buffers.into_iter().next().expect("Buffer absent")
         };
-        assert!(matches!(
-            describe(&[true, true, true]),
-            manifest::Buffer::Compact { .. }
-        ));
-        assert!(matches!(
-            describe(&[false, false]),
-            manifest::Buffer::Compact { .. }
-        ));
-        assert!(matches!(
-            describe(&[true, false, true]),
-            manifest::Buffer::Basic { .. }
-        ));
+        let uniform = describe(&[true, true, true]);
+        let absent = describe(&[false, false]);
+        let mixed = describe(&[true, false, true]);
+        assert!(matches!(uniform, manifest::Buffer::Compact { .. }));
+        assert!(matches!(absent, manifest::Buffer::Compact { .. }));
+        assert!(matches!(mixed, manifest::Buffer::Basic { .. }));
     }
 
     /// [`Align::align`] rounds [`size`](Serialize::size) up ↑ to the next 64-bit boundary.
@@ -2465,7 +2475,7 @@ mod tests {
         assert_eq!(bytes[..8], 6u64.to_le_bytes()); // Length prefix excludes padding
         assert_eq!(bytes[14..], [u8::MIN; 2]); // Trailing bytes are zero-filled
         let none: Vec<u16> = Vec::new();
-        assert!(SizedBuf::new(&none).size().is_err()); // Empty regions are omitted, never framed
+        SizedBuf::new(&none).size().expect_err("Empty region framed"); // omitted, never framed
     }
 
     /// [`OptBitVec`] aligns the value buffer to the boundary following the validity mask and stores
@@ -2524,7 +2534,8 @@ mod tests {
         let mut col = Column::from(u16::with_unfolder::<Schema>());
         let next = data.buffers(0, &mut std::iter::once(&mut col)).expect("Buffers failed");
         assert_eq!(next, 16); // Next buffer begins at 64-bit alignment boundary
-        let manifest::Buffer::Detailed { buffer, .. } = &col.buffers[0] else {
+        let manifest::Buffer::Detailed { buffer, .. } = col.buffers.first().expect("Buffer absent")
+        else {
             panic!("Buffer descriptor is not Detailed")
         };
         assert_eq!(buffer.offset, 8); // Body starts after the header prefix
@@ -2540,7 +2551,9 @@ mod tests {
         let mut col = Column::from(u32::with_unfolder::<Schema>());
         let next = acc.buffers(0, &mut std::iter::once(&mut col)).expect("Buffers failed");
         assert_eq!(next, 40); // Aligned end of the composite region
-        let manifest::Buffer::Detailed { buffer, count, min, max } = &col.buffers[0] else {
+        let manifest::Buffer::Detailed { buffer, count, min, max, .. } =
+            col.buffers.first().expect("Buffer absent")
+        else {
             panic!("Buffer descriptor is not Detailed")
         };
         assert_eq!(buffer.offset, 8); // Whole body starts after the header prefix
@@ -2569,8 +2582,8 @@ mod tests {
         assert_eq!(text, bytes);
     }
 
-    /// [`OptSeq<u8>`] accumulates an [`Option<String>`] identically to its raw optional UTF-8 bytes;
-    /// the [`u64::MAX`] sentinel marks [`None`] in both.
+    /// [`OptSeq<u8>`] accumulates an [`Option<String>`] identically to its raw optional UTF-8
+    /// bytes; the [`u64::MAX`] sentinel marks [`None`] in both.
     #[test]
     fn opt_seq_string_matches_bytes() {
         let mut text: OptSeq<u8> = OptSeq::default();
@@ -2598,8 +2611,8 @@ mod tests {
         assert_eq!(acc.count(), 3);
     }
 
-    /// A [`Lite`](Buffer::Compact) column serializes as a **one-row** compact body regardless of the
-    /// repetition count.
+    /// A [`Lite`](Buffer::Compact) column serializes as a **one-item** compact body regardless of
+    /// the repetition count.
     #[test]
     fn compact_lite_serializes_one_row() {
         let mut acc: Buffer<u32> = Buffer::default();
@@ -2670,7 +2683,9 @@ mod tests {
         let mut col = Column::from(u16::with_unfolder::<Schema>());
         let next = acc.buffers(0, &mut std::iter::once(&mut col)).expect("Buffers failed");
         assert_eq!(next, 16); // Aligned end of the one-item compact body
-        let manifest::Buffer::Compact { buffer, count } = &col.buffers[0] else {
+        let manifest::Buffer::Compact { buffer, count, .. } =
+            col.buffers.first().expect("Buffer absent")
+        else {
             panic!("Buffer descriptor is not Compact")
         };
         assert_eq!(buffer.offset, 8); // Body starts after the header prefix
@@ -2679,18 +2694,21 @@ mod tests {
         acc.push(9); // Materialise the inner accumulator
         let mut col = Column::from(u16::with_unfolder::<Schema>());
         acc.buffers(0, &mut std::iter::once(&mut col)).expect("Buffers failed");
-        assert!(matches!(col.buffers[0], manifest::Buffer::Detailed { .. }));
+        assert!(matches!(
+            col.buffers.first().expect("Buffer absent"),
+            manifest::Buffer::Detailed { .. }
+        ));
     }
 
     /// [`Accumulate::describe`] constructs a
     /// [`manifest::Buffer::Compact`](manifest::Buffer::Compact) descriptor for a homogeneous run:
-    /// three identical pushes record `count == 3` spanning the one serialized item, and no statistic
-    /// is recorded because the sector already spans it.
+    /// three identical pushes record `count == 3` spanning the one serialized item, and no
+    /// statistic is recorded because the sector already spans it.
     #[test]
     fn compact_describes_compact() {
         let mut acc: Buffer<u16> = Buffer::default();
         [4, 4, 4].into_iter().for_each(|v| acc.push(v));
-        let manifest::Buffer::Compact { count, buffer } = describe(&acc, acc.count()) else {
+        let manifest::Buffer::Compact { count, buffer, .. } = describe(&acc, acc.count()) else {
             panic!("Buffer descriptor is not Compact")
         };
         assert_eq!(count.get(), 3); // Repetition count spans every accumulated item
@@ -2721,12 +2739,15 @@ mod tests {
         ["red", "blue"].into_iter().for_each(|v| acc.push(String::from(v)));
         let mut col = Column::from(String::with_unfolder::<Schema>());
         acc.buffers(0, &mut std::iter::once(&mut col)).expect("Buffers failed");
-        assert!(matches!(col.buffers[0], manifest::Buffer::Basic { .. }));
+        assert!(matches!(
+            col.buffers.first().expect("Buffer absent"),
+            manifest::Buffer::Basic { .. }
+        ));
     }
 
     /// An [`Empty`](Buffer::Empty) [`Buffer`] surfaces [`Error::Zero`] from
-    /// [`describe`](Accumulate::describe); empty buffers are never written to disk and must be caught
-    /// before registration. Scope is reserved here for future default-item buffer omission.
+    /// [`describe`](Accumulate::describe); empty buffers are never written to disk and must be
+    /// caught before registration. Scope is reserved here for future default-item buffer omission.
     #[test]
     fn compact_empty_buffer_errors() {
         let acc: Buffer<u32> = Buffer::Empty;
@@ -2748,6 +2769,6 @@ mod tests {
         assert_eq!(data.size().expect("Size failed").get(), 3);
         assert_eq!(data.serialize().expect("Serialize failed"), vec![1, 2, 3]);
         let none: &[u8] = &[];
-        assert!(none.size().is_err());
+        none.size().expect_err("Empty accumulator sized");
     }
 }
