@@ -452,6 +452,11 @@ impl Buffer {
         }
     }
 
+    /// Returns the byte offset to the on-disk [`Sector`] recorded in [`self`](Buffer).
+    pub(crate) const fn offset(&self) -> u64 {
+        self.sector().offset
+    }
+
     /// Returns `true` if the statistic span `min ..= max` is provably disjoint from the specified
     /// [`Bounds`][1], so no item recorded between them can satisfy the predicate.
     ///
