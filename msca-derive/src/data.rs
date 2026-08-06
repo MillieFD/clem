@@ -149,10 +149,9 @@ fn describe(src: &Ident, acc: &Ident, fields: &[Field]) -> TokenStream {
             fn buffers(
                 &self,
                 offset: u64,
-                segment: u64,
                 columns: &mut ::msca::Columns,
             ) -> ::core::result::Result<u64, ::msca::schema::Error> {
-                #( let offset = self.#idents.buffers(offset, segment, columns)?; )*
+                #( let offset = self.#idents.buffers(offset, columns)?; )*
                 ::core::result::Result::Ok(offset)
             }
         }
