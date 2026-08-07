@@ -2237,6 +2237,7 @@ mod tests {
     use static_assertions::{assert_impl_all, assert_not_impl_any};
 
     use super::*;
+    use crate::io::Deserializer;
     use crate::schema::Schema;
 
     /* ---------------------------------------------------------------------------- Shared State */
@@ -2318,9 +2319,13 @@ mod tests {
         let mut mmap = MmapMut::map_anon(bytes.len()).expect("Anonymous map failed");
         mmap[..bytes.len()].copy_from_slice(&bytes);
         let mmap = mmap.make_read_only().expect("Read-only conversion failed");
+        let manifest::Buffer::Detailed { min, max, .. } = &buffer else {
+            panic!("Detailed")
+        };
         // SAFETY: the statistic sectors span serialized `f64` items matching the requested type
-        let span = |a: &f64, b: &f64| manifest::Buffer::disjoint(a, b, &(10.0f64..20.0)).not();
-        let keep = buffer.test(span, &mmap).expect("Assess failed");
+        let min: f64 = min.slice(&mmap).expect("min").deserialize_into().expect("min decode");
+        let max: f64 = max.slice(&mmap).expect("max").deserialize_into().expect("max decode");
+        let keep = manifest::Buffer::disjoint(&min, &max, &(10.0f64..20.0)).not();
         assert!(keep); // NaN proves nothing; the buffer is retained rather than pruned
     }
 
