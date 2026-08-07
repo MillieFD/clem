@@ -12,17 +12,15 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //!
 //! ---
 //!
-//! Each new [`Query`] begins with every [`Column`](column::Column) and every [`Buffer`] from the
-//! specified [`Schema`]. Individual columns can be resolved and filtered to subtractively reduce
-//! the result set. Some filters are evaluated eagerly **before** file IO; removing individual
-//! [buffers](Buffer) using [manifest] statistics. Other filters are attached to read-time
-//! [adapters](column::Adapter) and evaluated lazily **during** [deserialization](Deserialize).
+//! Each new [`Query`] begins with every [`Column`] and every [`Buffer`] from the specified
+//! [`Schema`]. Individual columns can be resolved and filtered to subtractively reduce the result
+//! set. Some filters are evaluated eagerly **before** file IO; removing individual buffers using
+//! [manifest] statistics. Other filters are attached to read-time [adapters](Adapter) and evaluated
+//! lazily **during** [deserialization](Deserialize).
 //!
-//! A [`Query`] is a factory for strongly-typed [`Column`](column::Column) handles over one schema,
-//! plus a set of unfiltered composite conveniences. Extraction is selection: a column is read only
-//! when a handle is opened for it via [`column`](Query::column). Filters live on the handle as
-//! concrete typed state and are applied to each item **after** deserialization, so every item is
-//! deserialized exactly once and every predicate is an infallible, statically-dispatched test.
+//! [`Query`] provides a factory for read-only columns over one schema. Filters wrap the column with
+//! concrete typed state and assess each item **after** deserialization – every item is deserialized
+//! exactly once and every infallible filter [`Fn`] is monomorphized by the compiler.
 //!
 //! ```rust,ignore
 //! let overheating = dataset
@@ -33,7 +31,7 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! ```
 //!
 //! Items are deserialized exactly once when the lazy [`Iterator`] returned by a terminal method is
-//! polled. Every filter is an infallible monomorphized test.
+//! polled.
 
 #![doc = include_str!("../../../doc/query-filters.md")]
 #![doc = include_str!("../../../doc/query-columns.md")]
@@ -53,7 +51,7 @@ use funty::Unsigned;
 use memmap2::Mmap;
 use xxhash_rust::xxh3::Xxh3Builder;
 
-use crate::io::{self, Deserialize, Deserializer, Sector};
+use crate::io::{self, Deserialize, Deserializer};
 use crate::manifest::{self, Buffer};
 use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Resolve, Unfiltered};
 use crate::schema::{Schema, Type, Unfolder, number};
