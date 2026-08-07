@@ -23,7 +23,7 @@ use minicbor::{CborLen, Decode, Encode};
 use smol::io::{AsyncRead, AsyncReadExt, AsyncSeek};
 
 use crate::io::{Checksum, Deserializer, Register};
-use crate::read::{Evaluate, Outcome, Read, Reader};
+use crate::read::{Read, Reader};
 use crate::schema::{self, Type, Unfolder, number};
 use crate::segment::{Header, Segment, Variant};
 use crate::{Deserialize, Sector, Serialize, io, query};
