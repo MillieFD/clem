@@ -165,6 +165,24 @@ impl<'m> Query<'m> {
         }
     }
 
+    /// Returns a new [mask](BitBox) that includes every available [`Buffer`] from the [`BTreeSet`].
+    ///
+    /// [`Buffer`] inclusion is determined using a positional [mask](BitBox) where the `n`th bit
+    /// corresponds to the `n`th buffer from the `n`th data segment.
+    ///
+    /// ```text
+    /// buffers   [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
+    /// mask        1    0    1    1    0      Mutable owned bitmask.
+    ///             ▼         ▼    ▼
+    /// read        A         C    D           Buffers B and E are never read.
+    /// ```
+    ///
+    /// [`Column`] filters are applied subtractively to reduce the mask.
+    pub fn mask(&self) -> BitBox {
+        let n = self.size();
+        BitVec::repeat(true, n).into_boxed_bitslice()
+    }
+
     /// Returns the number of data [segments][1] for the queried [`Schema`].
     ///
     /// Each column is written exactly once per segment. All columns are therefore guaranteed to
