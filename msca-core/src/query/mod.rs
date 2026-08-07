@@ -156,8 +156,9 @@ impl<'m> Query<'m> {
         Schema: Unfolder<I>,
     {
         if let Some(entry) = self.columns.get(name) {
-            let column = entry.exact::<I>()?;
-            let src = column::Src::new(self, column);
+            let buffers = &entry.exact::<I>()?.buffers;
+            // SAFETY: on-disk column type verified against requested I via manifest::Column::exact
+            let src = unsafe { Src::new(self, buffers) };
             Ok(src)
         } else {
             Error::Column { name: name.into() }.into()
