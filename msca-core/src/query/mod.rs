@@ -165,6 +165,19 @@ impl<'m> Query<'m> {
         }
     }
 
+    /// Returns the number of data [segments][1] for the queried [`Schema`].
+    ///
+    /// Each column is written exactly once per segment. All columns are therefore guaranteed to
+    /// contain the same number of buffers.
+    ///
+    /// See [`Query::count`] for the total number of **logical** items across all segments.
+    ///
+    /// [1]: crate::segment::Segment
+    pub fn size(&self) -> usize {
+        // NOTE: copied fn dereferences &&Column → &Column (no runtime cost).
+        self.columns.values().next().copied().map(manifest::Column::size).unwrap_or_default()
+    }
+
     /// Returns the `n`th item of the query.
     ///
     /// Like most indexing operations, the count starts from zero, so `nth(0)` returns the first
