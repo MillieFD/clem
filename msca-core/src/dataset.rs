@@ -309,7 +309,6 @@ mod tests {
 
     use super::*;
     use crate::io::{File, SizedBuf};
-    use crate::manifest::Buffer;
     use crate::manifest::Error::{Collision, NotFound};
     use crate::query::Column;
     use crate::schema::{self, Type, number};
