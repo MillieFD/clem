@@ -264,6 +264,7 @@ fn unfiltered(src: &Ident, reader: &Ident, fields: &[Field]) -> TokenStream {
 }
 
 /// The left-nested [`Conjunct`] tree over one column handle per field.
+// NOTE: L0 nesting direction is assumed by descent / unpack / ascent / fold – other shapes rejected
 fn tree(fields: &[Field]) -> TokenStream {
     let types = Field::types(fields);
     let mut legs =
