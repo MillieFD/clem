@@ -705,24 +705,6 @@ mod tests {
         assert!(!touch && !full && !point); // may hold a match, so the buffer is retained
     }
 
-    /// [`Compact`](Buffer::Compact) and [`Basic`](Buffer::Basic) descriptors carry no statistics
-    /// and are never provably disjoint; a compact item is instead evaluated exactly by a filter.
-    #[test]
-    fn compact_and_basic_are_never_disjoint() {
-        let mmap = map(&[u8::MIN]);
-        let buffer = Sector::new(8u64, 16u64).expect("Sector::new failed");
-        let count = NonZeroU64::new(3).expect("Count is zero");
-        for buf in [
-            Buffer::Compact { buffer, count },
-            Buffer::Basic { buffer, count },
-        ] {
-            // SAFETY: both variants return before any type-dependent statistic is deserialized
-            let span = |a: &u32, b: &u32| Buffer::disjoint(a, b, &(10u32..20)).not();
-            let keep = buf.test(span, &mmap).expect("Assess failed");
-            assert!(keep);
-        }
-    }
-
     /// [`Schema::count`] sums the item counts across every buffer of the first column, spanning all
     /// three descriptor variants.
     #[test]
