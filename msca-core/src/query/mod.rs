@@ -135,9 +135,9 @@ impl<'m> Query<'m> {
 
     /// Select a named [`Column`] from the parent [`Query`].
     ///
-    /// The requested type is [verified](Column::exact) against the actual on-disk column [`Type`]
-    /// exactly once. Subsequent column operations – such as filtering and deserialization – can
-    /// progress fearlessly without further runtime checks.
+    /// The requested type is [verified][1] against the actual on-disk column [`Type`] exactly once.
+    /// Subsequent column operations – such as filtering and deserialization – can progress
+    /// fearlessly without further runtime checks.
     ///
     /// ```rust,ignore
     /// .column::<f64>("temperature")? // a typed handle over the "temperature" column
@@ -147,7 +147,9 @@ impl<'m> Query<'m> {
     ///
     /// - [`Error::Column`] if `name` is not found in the query [`BTreeMap`].
     /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`] type.
-    pub fn column<'q, I>(&'q self, name: &str) -> Result<impl column::Column<Item = I> + 'q, Error>
+    ///
+    /// [1]: manifest::Column::exact
+    pub fn column<'q, I>(&'q self, name: &str) -> Result<Src<'q, I>, Error>
     where
         I: Read + Clone + 'q,
         I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
