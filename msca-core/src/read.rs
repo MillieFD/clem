@@ -217,6 +217,16 @@ impl<I> Outcome<I> {
         }
     }
 
+    /// Returns `true` if the item satisfied every filter attached to its column.
+    pub fn is_include(&self) -> bool {
+        matches!(self, Self::Include(..))
+    }
+
+    /// Returns `true` if the item was rejected by a filter attached to its column.
+    pub fn is_exclude(&self) -> bool {
+        matches!(self, Self::Exclude(..))
+    }
+
     /// Remove one layer of optionality, so downstream adapters see the inner item type.
     ///
     /// A present item keeps its slot and its content; an absent one keeps the slot alone, because
