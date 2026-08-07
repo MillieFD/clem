@@ -355,7 +355,7 @@ pub enum Error {
 }
 
 impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Column { name } => write!(f, "Column '{name}' not found"),
             Self::Io(e) => write!(f, "Query IO error → {e}"),
