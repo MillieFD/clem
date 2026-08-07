@@ -158,7 +158,7 @@ impl<'m> Query<'m> {
         if let Some(entry) = self.columns.get(name) {
             let buffers = &entry.exact::<I>()?.buffers;
             // SAFETY: on-disk column type verified against requested I via manifest::Column::exact
-            let src = unsafe { Src::new(self, buffers) };
+            let src = Src { query: self, buffers, item: PhantomData };
             Ok(src)
         } else {
             Error::Column { name: name.into() }.into()
