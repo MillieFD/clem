@@ -225,7 +225,7 @@ impl<'m> Query<'m> {
             .exact::<I>()?
             .buffers
             .iter();
-        let items = stream::Src::new(buffers, &self.mmap).iter()?.map(Outcome::from);
+        let items = iter::Src::new(buffers, &self.mmap).iter()?.map(Outcome::from);
         Ok(items)
     }
 
