@@ -293,7 +293,21 @@ impl<'m> PartialEq for Query<'m> {
 
 impl<'m> Eq for Query<'m> {}
 
-/// The result of **combining** two data sources.
+/// An immutable **data source** for downstream [`Column`] adapters on the [`Query`] result set.
+#[non_exhaustive] // reject struct literal construction
+pub struct Src<'q, I> {
+    /// An immutable reference to the parent [`Query`].
+    query: &'q Query<'q>,
+    /// [`Buffer`] descriptors for the [`Column`][1] across all segments in [`Sector`][2] order.
+    ///
+    /// [1]: manifest::Column
+    /// [2]: io::Sector
+    // NOTE: sector offset increases monotonically → sector order matches on-disk segment order
+    buffers: &'q BTreeSet<Buffer>,
+    /// Zero-sized type-state for the requested [`item`](I) type.
+    item: PhantomData<I>,
+}
+
 ///
 /// `Join` is itself a data source over the two inner sources, enabling the construction of nested
 /// join-trees over an arbitrary number of underlying [columns](column::Column).
