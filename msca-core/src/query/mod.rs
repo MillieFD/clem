@@ -294,7 +294,7 @@ impl<'m> PartialEq for Query<'m> {
 impl<'m> Eq for Query<'m> {}
 
 /// An immutable **data source** for downstream [`Column`] adapters on the [`Query`] result set.
-#[non_exhaustive] // reject struct literal construction
+#[non_exhaustive] // reject external struct literal construction
 pub struct Src<'q, I> {
     /// An immutable reference to the parent [`Query`].
     query: &'q Query<'q>,
