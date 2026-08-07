@@ -328,7 +328,7 @@ pub enum Error {
     },
     /// Attempted to [`join`][1] two [columns][2] from different [schemas][3].
     ///
-    /// [1]: column::Join::and
+    /// [1]: Join::and
     /// [2]: manifest::Column
     /// [3]: manifest::Schema
     Join,
