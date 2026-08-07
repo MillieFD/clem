@@ -1171,9 +1171,6 @@ pub trait Unfiltered<'q>: Read<Src<'q>: Iterator<Item = Outcome<Self>>> + Sized 
 #[doc(hidden)] // Reachable through the #[derive(Read)] macro; not intended as a stable API
 pub trait Composite<'q, S>: Sized {
     /// The reader assembling [`Self`] from one stream per column.
-    ///
-    /// Parameterised by the source [`S`], so a combination drives its per-slot verdict from the
-    /// join tree at compile time rather than carrying the operators as data.
     type Reader: Iterator<Item = Outcome<Self>>;
 
     /// Assemble the reader from `src`.
