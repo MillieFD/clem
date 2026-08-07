@@ -176,8 +176,7 @@ impl<'m> Query<'m> {
     /// Returns [`Error::Io`] if an error occurs during file [`IO`](io) or item deserialization.
     pub fn nth<'q, I>(&'q self, n: usize) -> Result<Option<I>, Error>
     where
-        I: Read + 'q,
-        I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
+        I: Unfiltered<'q> + 'q,
     {
         self.iter::<I>()?.nth(n).transpose().map_err(Error::from)
     }
@@ -232,8 +231,7 @@ impl<'m> Query<'m> {
     /// [1]: Deserialize::deserialize
     pub fn iter<'q, I>(&'q self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'q, Error>
     where
-        I: Read + 'q,
-        I::Src<'q>: Composite<'q, Query<'q>> + Iterator<Item = Outcome<I>> + 'q,
+        I: Unfiltered<'q> + 'q,
     {
         let iter = match self.columns.is_empty() {
             true => None,
