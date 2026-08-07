@@ -36,7 +36,6 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 #![doc = include_str!("../../../doc/query-filters.md")]
 #![doc = include_str!("../../../doc/query-columns.md")]
 
-use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Display};
 use std::hash::Hash;
@@ -115,6 +114,8 @@ impl<'m> Query<'m> {
     ///
     /// - [`Error::Number`] if an index overflows [`N`].
     /// - [`Error::Io`] if a deserialization failure occurs.
+    ///
+    /// Refer to [`Query::indexed`] and [`Column::indexed`] for the public entry points.
     fn intern<I, N, S>(items: S) -> Result<HashMap<I, N, Xxh3Builder>, Error>
     where
         N: Unsigned,
@@ -125,9 +126,7 @@ impl<'m> Query<'m> {
         let mut next = Some(N::MIN);
         for item in items {
             let i = next.ok_or(number::Error::Zero)?;
-            if let Entry::Vacant(entry) = map.entry(item?) {
-                entry.insert(i);
-            }
+            map.entry(item?).or_insert(i);
             next = i.checked_add(N::ONE);
         }
         Ok(map)
@@ -308,19 +307,23 @@ pub struct Src<'q, I> {
     item: PhantomData<I>,
 }
 
-///
-/// `Join` is itself a data source over the two inner sources, enabling the construction of nested
-/// join-trees over an arbitrary number of underlying [columns](column::Column).
-///
-/// Refer to the [join trait documentation](column::Join) for more details.
-#[derive(Clone, Debug)]
-#[non_exhaustive] // rejects external struct literal construction
-pub struct Join<A, B>
+/* ------------------------------------------------------------------------------ Column Filters */
+
+/// A [`Column`] **adapter state machine** that applies a [`filter`](filter::Filter::filter) to each
+/// [deserialized](Deserialize) item.
+pub struct Filter<S, F, I>
 where
-    A: column::Join,
-    B: column::Column,
+    F: Fn(&I) -> bool,
 {
-    /// A single [`Column`](column::Column) or nested [`Join`] instance.
+    /// The wrapped data source which yields [deserialized](Deserialize) items for the
+    /// [`filter`](filter::Filter::filter) closure.
+    source: S,
+    /// The [`filter`](filter::Filter::filter) used to test each [deserialized](Deserialize) item.
+    test: F,
+    /// Zero-sized operand type **marker**.
+    item: PhantomData<I>,
+}
+
     pub a: A,
     /// A single [`Column`](column::Column) instance.
     pub b: B,
