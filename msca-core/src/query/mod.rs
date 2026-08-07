@@ -294,40 +294,6 @@ where
     pub b: B,
 }
 
-impl<A, B> Join<A, B>
-where
-    A: column::Join,
-    B: column::Column,
-{
-    /// Consume `self` and return `a` and `b` which are guaranteed to contain **only**
-    /// [buffers](Buffer) from corresponding [segments][1].
-    ///
-    /// [1]: crate::segment::Segment
-    pub fn unpack(self) -> (A, B) {
-        (self.a, self.b)
-    }
-
-    /// Returns an [`Iterator`] that yields [`deserialized`][1] composite [`items`](I) from the
-    /// [joined][2] columns.
-    ///
-    /// ### Errors
-    ///
-    /// - [`Error::Column`] if the composite [`I`] requests a column that is not in the [`Join`].
-    /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`] type.
-    ///
-    /// Refer to the [composite trait documentation](Composite) for more details.
-    ///
-    /// [1]: Deserialize::deserialize
-    /// [2]: column::Join
-    pub fn iter<'a, I>(&'a self) -> Result<impl Iterator<Item = Result<I, io::Error>>, Error>
-    where
-        I: Read + 'a,
-        I::Src<'a>: Composite<'a, Self> + Iterator<Item = Outcome<I>> + 'a,
-    {
-        I::Src::new(self).map(Resolve::resolve)
-    }
-}
-
 /* ------------------------------------------------------------------------------ Specific Error */
 
 /// Errors returned from [`Query`] construction and execution.
