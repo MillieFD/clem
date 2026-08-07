@@ -39,19 +39,23 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 #![doc = include_str!("../../../doc/query-columns.md")]
 
 use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Display};
 use std::hash::Hash;
+use std::marker::PhantomData;
 use std::num::TryFromIntError;
+use std::ops::Not;
 use std::sync::Arc;
 
+use bitvec::boxed::BitBox;
+use bitvec::vec::BitVec;
 use funty::Unsigned;
 use memmap2::Mmap;
 use xxhash_rust::xxh3::Xxh3Builder;
 
-use crate::io::{self, Deserialize};
+use crate::io::{self, Deserialize, Deserializer, Sector};
 use crate::manifest::{self, Buffer};
-use crate::read::{Composite, Outcome, Read, Reader, Resolve};
+use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Resolve, Unfiltered};
 use crate::schema::{Schema, Type, Unfolder, number};
 
 /* ------------------------------------------------------------------------------ Public Exports */
