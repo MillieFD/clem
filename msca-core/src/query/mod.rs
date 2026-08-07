@@ -61,7 +61,7 @@ use crate::schema::{Schema, Type, Unfolder, number};
 /// A composable query interface to [read](Read) data from any [msca](crate) file; initialised from
 /// [`Dataset::query`][1] and executed lazily when [`iter`](Self::iter) is polled.
 ///
-/// [`Query`] also provides a [`Column`](column::Column) factory for the specified [`Schema`].
+/// [`Query`] also provides a [`Column`] factory for the specified [`Schema`].
 ///
 /// Refer to the [module-level documentation](self) for implementation details.
 ///
