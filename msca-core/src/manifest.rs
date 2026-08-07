@@ -478,60 +478,22 @@ impl Buffer {
         above || below
     }
 
-    /// Returns `true` if [`self`](Buffer) may hold an item satisfying `predicate`, resolving the
-    /// recorded statistics from the memory map **once** and handing both to it.
-    ///
-    /// A [`Compact`](Buffer::Compact) or [`Basic`](Buffer::Basic) buffer carries no statistics and
-    /// is never pruned here, so `predicate` is never called for either. The complementary probe is
-    /// [`test`](Self::test), which decides a compact buffer exactly and abstains for the rest, so
-    /// the two together decide every variant without ever deciding one twice.
-    ///
-    /// ### ⚠️ Safety
-    ///
-    /// This function is marked as [unsafe][3] due to the potential for undefined behaviour if the
-    /// requested type [`I`] does not match the actual [`Column`](Column) [`Type`].
+    /// Deserialize the single [item](I) from a [`Compact`](Buffer::Compact) buffer.
     ///
     /// ### Errors
     ///
-    /// Returns [`io::Error`] if a statistic sector cannot be resolved from the memory map.
-    ///
-    /// [3]: https://doc.rust-lang.org/book/ch20-01-unsafe-rust.html
-    pub(crate) fn test<I, P>(&self, predicate: P, mmap: &Mmap) -> Result<bool, io::Error>
+    /// Returns [`io::Error`] if the sector cannot be resolved or holds no item.
+    pub(crate) fn item<'m, I>(&self, mmap: &'m Mmap) -> Result<I, io::Error>
     where
-        P: FnOnce(&I, &I) -> bool,
-        I: for<'de> Deserialize<'de, Ok = I> + PartialOrd,
-    {
-        let (min, max) = match self {
-            Buffer::Detailed { min, max, .. } => (min, max),
-            Buffer::Compact { .. } | Buffer::Basic { .. } => return Ok(true),
-        };
-        let min: I = min.slice(mmap)?.deserialize_into()?;
-        let max: I = max.slice(mmap)?.deserialize_into()?;
-        let keep = predicate(&min, &max);
-        Ok(keep)
-    }
-
-    pub(crate) fn test_exact<'m, I, O, F>(
-        &self,
-        test: &F,
-        mmap: &'m Mmap,
-    ) -> Result<bool, io::Error>
-    where
-        I: Read + Evaluate<O> + 'm,
+        I: Read + 'm,
         I::Src<'m>: Deserialize<'m, Ok = I::Src<'m>> + Reader<'m, I>,
-        F: Fn(&O) -> bool,
     {
-        match self {
-            Buffer::Compact { .. } => {
-                let mut bytes = self.sector().slice(mmap)?;
-                let src = I::Src::deserialize(&mut bytes)?;
-                let item = src.iter()?.next().transpose()?;
-                let repeated =
-                    item.ok_or(io::Error::Truncated { expected: 1, actual: usize::MIN })?;
-                Ok(matches!(repeated.evaluate(test), Outcome::Include(..)))
-            }
-            Buffer::Basic { .. } | Buffer::Detailed { .. } => Ok(true),
-        }
+        let mut bytes = self.sector().slice(mmap)?;
+        I::Src::deserialize(&mut bytes)?
+            .iter()?
+            .next()
+            .transpose()?
+            .ok_or(io::Error::Truncated { expected: 1, actual: usize::MIN })
     }
 }
 
@@ -682,12 +644,14 @@ mod tests {
             min: Sector::new(0u64, width).expect("Sector::new failed"),
             max: Sector::new(width, width).expect("Sector::new failed"),
         };
-        let above = |a: &u32, b: &u32| Buffer::disjoint(a, b, &(100u32..200)).not();
-        let over = |a: &u32, b: &u32| Buffer::disjoint(a, b, &(20u32..40)).not();
+        let Buffer::Detailed { min, max, .. } = &detailed else {
+            panic!("Detailed expected")
+        };
         // SAFETY: the statistic sectors span serialized `u32` items matching the requested type
-        let high = detailed.test(above, &mmap).expect("Assess failed");
-        // SAFETY: the statistic sectors span serialized `u32` items matching the requested type
-        let mid = detailed.test(over, &mmap).expect("Assess failed");
+        let min: u32 = min.slice(&mmap).expect("min").deserialize_into().expect("min decode");
+        let max: u32 = max.slice(&mmap).expect("max").deserialize_into().expect("max decode");
+        let high = Buffer::disjoint(&min, &max, &(100u32..200)).not();
+        let mid = Buffer::disjoint(&min, &max, &(20u32..40)).not();
         assert!(!high); // 100..200 sits entirely above [10, 30]
         assert!(mid); // 20..40 straddles [10, 30]
     }
