@@ -233,13 +233,7 @@ impl<'m> Query<'m> {
     where
         I: Unfiltered<'q> + 'q,
     {
-        let iter = match self.columns.is_empty() {
-            true => None,
-            false => I::Src::new(self)?.into(),
-        }
-        .into_iter()
-        .flatten()
-        .resolve();
+        let iter = I::unfiltered(self)?.resolve();
         Ok(iter)
     }
 
