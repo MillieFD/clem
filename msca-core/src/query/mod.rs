@@ -248,11 +248,18 @@ impl<'m> Query<'m> {
         Ok(items)
     }
 
-    /// Returns an [`Iterator`] over [deserialized][1] composite `items` across every column.
+    /// Returns an [`Iterator`] that yields [`Composite`] items.
     ///
-    /// The returned iterator **only** yields [included](Outcome::Include) items by automatically
-    /// re-polling the source following an [excluded](Outcome::Exclude) item. An empty column with
-    /// no [buffers](Buffer) returns an empty [`Iterator`] that yields [`None`] immediately.
+    /// ### Implementation
+    ///
+    /// Each field of the composite is lazily [deserialized][1] from the respective [`Column`].
+    /// Refer to the [unfiltered trait documentation](Unfiltered) for more details.
+    ///
+    /// ### Guidance
+    ///
+    /// The iterator automatically re-polls the [`Source`] until an [included](Outcome::Include)
+    /// item is returned. Use [`Query::read`] for a non-resolved alternative that yields [`Outcome`]
+    /// instead.
     ///
     /// ### Errors
     ///
@@ -270,10 +277,8 @@ impl<'m> Query<'m> {
         Ok(iter)
     }
 
-    /// Returns the total number of on-disk items for this [`Schema`] across all [segments][1]; the
-    /// sum of [`Buffer::count`] for one [`Column`](manifest::Column).
-    ///
-    /// [1]: crate::segment::Segment
+    /// Returns the total number of on-disk items for this [`Schema`] across every segment; the sum
+    /// of [`Buffer::count`] for one [`Column`](manifest::Column).
     pub fn count(&self) -> u64 {
         // NOTE: copied fn dereferences &&Column → &Column (no performance cost).
         self.columns.values().next().copied().map(manifest::Column::count).unwrap_or_default()
