@@ -12,13 +12,13 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //!
 //! ---
 //!
-//! Each new [`Query`] begins with every [`Column`] and every [`Buffer`] from the specified
+//! Each new `Query` begins with every [`Column`] and every [`Buffer`] from the specified
 //! [`Schema`]. Individual columns can be resolved and filtered to subtractively reduce the result
 //! set. Some filters are evaluated eagerly **before** file IO; removing individual buffers using
-//! [manifest] statistics. Other filters are attached to read-time [adapters](Adapter) and evaluated
+//! [manifest] statistics. Other filters are attached to read-time adapters and evaluated
 //! lazily **during** [deserialization](Deserialize).
 //!
-//! [`Query`] provides a factory for read-only columns over one schema. Filters wrap the column with
+//! `Query` provides a factory for read-only columns over one schema. Filters wrap the column with
 //! concrete typed state and assess each item **after** deserialization – every item is deserialized
 //! exactly once and every infallible filter [`Fn`] is monomorphized by the compiler.
 //!
@@ -83,14 +83,14 @@ pub struct Query<'m> {
 }
 
 impl<'m> Query<'m> {
-    /// Map each **distinct** [item](I) to the corresponding on-disk [index](N).
+    /// Map each **distinct** item to the corresponding on-disk index.
     ///
     /// The [`Dataset`][1] is read in ascending insertion order; items record their first index and
     /// subsequent duplicate items are discarded.
     ///
     /// ### Errors
     ///
-    /// - [`Error::Number`] if a first-occurrence index overflows [`N`].
+    /// - [`Error::Number`] if a first-occurrence index overflows `N`.
     /// - [`Error::Io`] if a deserialization failure occurs.
     ///
     /// [1]: crate::dataset::Dataset
@@ -103,8 +103,8 @@ impl<'m> Query<'m> {
         Self::intern(iter)
     }
 
-    /// Intern each **distinct** [item](I) from the provided [set](S) and map to the corresponding
-    /// [index](N) of the earliest on-disk occurrence.
+    /// Intern each **distinct** item from the provided set and map to the corresponding index of
+    /// the earliest on-disk occurrence.
     ///
     /// The index increments for each on-disk item. Repeated items intern to the index of their
     /// earlier occurrence while the counter advances `+1` for each duplicate. The maximum index is
@@ -112,7 +112,7 @@ impl<'m> Query<'m> {
     ///
     /// ### Errors
     ///
-    /// - [`Error::Number`] if an index overflows [`N`].
+    /// - [`Error::Number`] if an index overflows `N`.
     /// - [`Error::Io`] if a deserialization failure occurs.
     ///
     /// Refer to [`Query::indexed`] and [`Column::indexed`] for the public entry points.
@@ -134,7 +134,7 @@ impl<'m> Query<'m> {
 
     /// Select a named [`Column`] from the parent [`Query`].
     ///
-    /// The requested type is [verified][1] against the actual on-disk column [`Type`] exactly once.
+    /// The requested type is verified against the actual on-disk column [`Type`] exactly once.
     /// Subsequent column operations – such as filtering and deserialization – can progress
     /// fearlessly without further runtime checks.
     ///
@@ -145,9 +145,7 @@ impl<'m> Query<'m> {
     /// ### Errors
     ///
     /// - [`Error::Column`] if `name` is not found in the query [`BTreeMap`].
-    /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`] type.
-    ///
-    /// [1]: manifest::Column::exact
+    /// - [`Error::Type`] if the requested `Type` does not match the on-disk `Column` type.
     pub fn column<'q, I>(&'q self, name: &str) -> Result<Src<'q, I>, Error>
     where
         I: Read + Clone + 'q,
@@ -166,8 +164,8 @@ impl<'m> Query<'m> {
 
     /// Returns a new [mask](BitBox) that includes every available [`Buffer`] from the [`BTreeSet`].
     ///
-    /// [`Buffer`] inclusion is determined using a positional [mask](BitBox) where the `n`th bit
-    /// corresponds to the `n`th buffer from the `n`th data segment.
+    /// `Buffer` inclusion is determined using a positional mask where the `n`th bit corresponds
+    /// to the `n`th buffer from the `n`th data segment.
     ///
     /// ```text
     /// buffers   [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
@@ -182,14 +180,12 @@ impl<'m> Query<'m> {
         BitVec::repeat(true, n).into_boxed_bitslice()
     }
 
-    /// Returns the number of data [segments][1] for the queried [`Schema`].
+    /// Returns the number of data segments for the queried [`Schema`].
     ///
     /// Each column is written exactly once per segment. All columns are therefore guaranteed to
     /// contain the same number of buffers.
     ///
     /// See [`Query::count`] for the total number of **logical** items across all segments.
-    ///
-    /// [1]: crate::segment::Segment
     pub fn size(&self) -> usize {
         // NOTE: copied fn dereferences &&Column → &Column (no runtime cost).
         self.columns.values().next().copied().map(manifest::Column::size).unwrap_or_default()
@@ -209,24 +205,30 @@ impl<'m> Query<'m> {
     where
         I: Unfiltered<'q> + 'q,
     {
-        self.iter::<I>()?.nth(n).transpose().map_err(Error::from)
+        I::nth(self, n)?.resolve().next().transpose().map_err(Error::from)
     }
 
     /// Return an [`Iterator`] yielding one [`Outcome`] per [deserialized][1] item from the named
     /// [`Column`].
     ///
-    /// The requested [`Type`] is verified against the on-disk [`Column`] type exactly once.
-    /// Subsequent deserialization can progress fearlessly without additional runtime checks.
+    /// The requested [`Type`] is verified against the on-disk column type exactly once. Subsequent
+    /// deserialization proceeds fearlessly without additional runtime checks.
+    ///
+    /// ### Guidance
+    ///
+    /// Use zero-allocation `Query::read` when no filter is required for the named column. Use
+    /// [`Query::column`] to extract the named column when filters *are* required. An unfiltered
+    /// extracted column retains every [`Buffer`], meaning both unfiltered forms yield the same
+    /// items in the same order.
     ///
     /// ### Errors
     ///
     /// - [`Error::Column`] if `name` is not found in the query [`BTreeMap`].
-    /// - [`Error::Type`] if the requested [`Type`] is incompatible with the on-disk column type.
+    /// - [`Error::Type`] if the requested type is incompatible with the on-disk column type.
     /// - [`Error::Io`] if a per-buffer source cannot be constructed from the memory map.
     ///
-    /// Refer to [`Query::iter`] for a [resolved](Resolve) alternative that yields only
-    /// [included](Outcome::Include) items by automatically re-polling the iterator following an
-    /// [excluded](Outcome::Exclude) item.
+    /// Refer to [`Query::iter`] for a resolved alternative that automatically re-polls the iterator
+    /// to yield only [included](Outcome::Include) items.
     ///
     /// [1]: Deserialize::deserialize
     pub fn read<'q, I>(&'q self, name: &str) -> Result<impl Iterator<Item = Outcome<I>>, Error>
@@ -246,7 +248,7 @@ impl<'m> Query<'m> {
         Ok(items)
     }
 
-    /// Returns an [`Iterator`] over [`deserialized`][1] composite [`items`](I) across every column.
+    /// Returns an [`Iterator`] over [deserialized][1] composite `items` across every column.
     ///
     /// The returned iterator **only** yields [included](Outcome::Include) items by automatically
     /// re-polling the source following an [excluded](Outcome::Exclude) item. An empty column with
@@ -254,7 +256,7 @@ impl<'m> Query<'m> {
     ///
     /// ### Errors
     ///
-    /// - [`Error::Column`] if a column named by the composite [`I`] is absent from the schema.
+    /// - [`Error::Column`] if a column named by the composite `I` is absent from the schema.
     /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`] type.
     ///
     /// Refer to [`Query::read`] for a non-resolved alternative that yields [`Outcome`].
@@ -293,7 +295,7 @@ impl<'m> PartialEq for Query<'m> {
 impl<'m> Eq for Query<'m> {}
 
 /// An immutable **data source** for downstream [`Column`] adapters on the [`Query`] result set.
-#[non_exhaustive] // reject external struct literal construction
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Src<'q, I> {
     /// An immutable reference to the parent [`Query`].
     query: &'q Query<'q>,
@@ -311,8 +313,10 @@ pub struct Src<'q, I> {
 
 /// A [`Column`] **adapter state machine** that applies a [`filter`](filter::Filter::filter) to each
 /// [deserialized](Deserialize) item.
-pub struct Filter<S, F, I>
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Filter<'q, S, F, I>
 where
+    S: Source<'q>,
     F: Fn(&I) -> bool,
 {
     /// The wrapped data source which yields [deserialized](Deserialize) items for the
