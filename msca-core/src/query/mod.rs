@@ -329,8 +329,8 @@ where
     source: S,
     /// The [`filter`](filter::Filter::filter) used to test each [deserialized](Deserialize) item.
     test: F,
-    /// Zero-sized operand type **marker**.
-    item: PhantomData<I>,
+    /// Zero-sized **marker** carrying the operand type and [`Query`] lifetime.
+    item: PhantomData<&'q I>,
 }
 
     pub a: A,
