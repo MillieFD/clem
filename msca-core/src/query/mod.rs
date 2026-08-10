@@ -425,7 +425,7 @@ where
 
 /* ---------------------------------------------------------------------------------- Join Nodes */
 
-/// A set intersection `∩` **node** returning the items from `A` [`and`](Join::and) `B`.
+/// A set intersection `∩` **node** returning items from `A` [`and`](Join::and) `B`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[non_exhaustive] // reject external struct literal construction
 pub struct Conjunct<A, B> {
@@ -435,7 +435,7 @@ pub struct Conjunct<A, B> {
     pub b: B,
 }
 
-/// A set union `∪` **node** returning the items from `A` [`or`](Join::or) `B`.
+/// A set union `∪` **node** returning items from `A` [`or`](Join::or) `B`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[non_exhaustive] // reject external struct literal construction
 pub struct Disjunct<A, B> {
@@ -863,6 +863,128 @@ pub mod stream {
             Self { buffers, mmap }
         }
 
+        /// Deserialize each buffer item exactly once, yielding one [`Result`] per item.
+        ///
+        /// Every per-buffer source is constructed **eagerly**, so sector and framing errors – and
+        /// the single item of a compact buffer – surface here rather than mid-stream. Each source
+        /// is deserialized exactly once, ahead of the variant split.
+        ///
+        /// The item lifetime binds to the memory map `'m`, decoupled from the buffer-iteration
+        /// borrow `'b`, so a zero-copy borrowed item outlives the transient buffer cursor.
+        ///
+        /// ### Errors
+        ///
+        /// Returns [`Error::Truncated`] if a buffer sector extends beyond the memory map or a
+        /// compact body yields no item, or any error raised while [deserializing](Deserialize) a
+        /// per-buffer source.
+        pub(crate) fn iter<I>(self) -> Result<impl Iterator<Item = Result<I, Error>> + 'b, Error>
+        where
+            B: 'b,
+            'm: 'b,
+            I: Read + Clone + 'm,
+            I::Src<'m>: Deserialize<'m, Ok = I::Src<'m>> + Reader<'m, I>,
+        {
+            let mmap = self.mmap;
+            let size = self.buffers.size_hint().0;
+            let mut runs = Vec::with_capacity(size);
+            for buffer in self.buffers {
+                let mut bytes = buffer.sector().slice(mmap)?;
+                let len: usize = buffer.count().try_into()?;
+                let src = I::Src::deserialize(&mut bytes)?;
+                let flow = if matches!(buffer, Buffer::Compact { .. }) {
+                    let missing = Error::Truncated { expected: len, actual: usize::MIN };
+                    let item = src.iter()?.next().transpose()?.ok_or(missing)?;
+                    let repeated = iter::repeat_n(item, len).map(Ok);
+                    Decode::Same(repeated)
+                } else {
+                    Decode::Each(src.iter()?.take(len))
+                };
+                runs.push(flow);
+            }
+            let items = runs.into_iter().flatten();
+            Ok(items)
+        }
+    }
+
+    /* ----------------------------------------------------------------------------------- Tests */
+
+    #[cfg(test)]
+    mod tests {
+        use std::num::NonZeroU64;
+
+        use memmap2::MmapMut;
+
+        use super::*;
+        use crate::Serialize;
+        use crate::io::Sector;
+
+        /* ------------------------------------------------------------------------ Shared State */
+
+        /// Build a read-only anonymous [`Mmap`] over the provided `bytes`.
+        fn map(bytes: &[u8]) -> Mmap {
+            let mut mmap = MmapMut::map_anon(bytes.len().max(1)).expect("Anonymous map failed");
+            mmap[..bytes.len()].copy_from_slice(bytes);
+            mmap.make_read_only().expect("Read-only conversion failed")
+        }
+
+        /// A [`Sector`] of `length` bytes anchored at the map origin.
+        fn sector(length: usize) -> Sector {
+            Sector {
+                offset: u64::MIN,
+                size: NonZeroU64::new(length as u64).expect("Empty body"),
+            }
+        }
+
+        /// Drain a decoded buffer into an owned [`Vec`].
+        fn drained(buffer: &Buffer, mmap: &Mmap) -> Result<Vec<u32>, Error> {
+            Src::new(iter::once(buffer), mmap).iter::<u32>()?.collect()
+        }
+
+        /* -------------------------------------------------------------------------- Unit Tests */
+
+        /// [`iter`](Src::iter) yields every item of a [`Basic`](Buffer::Basic) buffer,
+        /// truncated to the recorded `count`.
+        #[test]
+        fn decode_streams_standard_buffer() {
+            let bytes = vec![10u32, 20, 30].serialize().expect("Serialize failed");
+            let mmap = map(&bytes);
+            let buffer = Buffer::Basic {
+                buffer: sector(bytes.len()),
+                count: NonZeroU64::new(3).expect("Zero rows"),
+            };
+            let items = drained(&buffer, &mmap).expect("Stream failed");
+            assert_eq!(items, [10, 20, 30]);
+        }
+
+        /// [`iter`](Src::iter) resolves the single item of a [`Compact`](Buffer::Compact)
+        /// buffer exactly once and repeats it `count` times.
+        #[test]
+        fn decode_repeats_compact_item() {
+            let bytes = vec![7u32].serialize().expect("Serialize failed");
+            let mmap = map(&bytes);
+            let buffer = Buffer::Compact {
+                buffer: sector(bytes.len()),
+                count: NonZeroU64::new(3).expect("Zero rows"),
+            };
+            let items = drained(&buffer, &mmap).expect("Stream failed");
+            assert_eq!(items, [7, 7, 7]);
+        }
+
+        /// A sector extending beyond the memory map surfaces **eagerly** from stream construction
+        /// rather than mid-iteration; no item is ever yielded.
+        #[test]
+        fn decode_rejects_out_of_bounds_sector() {
+            let mmap = map(&[u8::MIN; 8]);
+            let buffer = Buffer::Basic {
+                buffer: sector(64), // spans past the eight-byte map
+                count: NonZeroU64::new(1).expect("Zero rows"),
+            };
+            let error = drained(&buffer, &mmap).expect_err("Out-of-bounds sector accepted");
+            assert!(matches!(error, Error::Truncated { .. }));
+        }
+    }
+}
+
 /* ------------------------------------------------------------------------------ Specific Error */
 
 /// Errors returned from [`Query`] construction and execution.
@@ -895,6 +1017,21 @@ pub enum Error {
         /// The actual on-disk column [`Type`].
         actual: Type,
     },
+    /// Attempted to combine two handles that do not share one parent [`Query`].
+    ///
+    /// A combination reconciles a single buffer selection across both legs, so [`and`](Join::and),
+    /// [`or`](Join::or) and [`xor`](Join::xor) require both legs to read the same memory map and
+    /// expose the same [`Schema`].
+    ///
+    /// ### Guidance
+    ///
+    /// Use [`semi_join`](filter::Filter::semi_join) or [`anti_join`](filter::Filter::anti_join) to
+    /// filter a [`Column`] against a column of a separate query, which may belong to another
+    /// [`Dataset`](crate::Dataset) entirely. The other column is drained once to a sorted key set
+    /// rather than reconstructed, so the result carries the filtered column alone and no
+    /// cross-schema item is rebuilt.
+    ///
+    /// Refer to the [module-level documentation](self) for more details.
     Join,
 }
 
