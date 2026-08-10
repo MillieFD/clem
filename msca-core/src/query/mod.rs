@@ -356,7 +356,7 @@ where
     S: Source<'q>,
     O: Operand<I>,
 {
-    /// The wrapped data source which yields [deserialized](Deserialize) items.
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
     /// The [`Operand`] used to assess each [`Buffer`] and [deserialized](Deserialize) item.
     operand: O,
