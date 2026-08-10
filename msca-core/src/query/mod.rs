@@ -403,23 +403,47 @@ where
     /// The number of items to [`skip`](Column::skip).
     skip: usize,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    query: PhantomData<&'q Mmap>,
+    mmap: PhantomData<&'q Mmap>,
 }
 
-    impl<S, F, O> Iterator for Filter<S, F>
-    where
-        S: Iterator<Item = Outcome<O>>,
-        F: Fn(O) -> Outcome<O>,
-    {
-        type Item = Outcome<O>;
+/// A [`Column`] **adapter state machine** that reads at most `n` items.
+///
+/// This adapter is initialised via [`Column`](Column)`::`[`take`](Column::take) and exludes any
+/// [buffers](Buffer) that are provably disjoint from the requested result set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Take<'q, S>
+where
+    S: Source<'q>,
+{
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    source: S,
+    /// The number of items to [`take`](Column::take).
+    take: usize,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    mmap: PhantomData<&'q Mmap>,
+}
 
-        fn next(&mut self) -> Option<Outcome<O>> {
-            match self.source.next()? {
-                Outcome::Include(item) => (self.filter)(item).into(),
-                other => other.into(), // skip excluded items
-            }
-        }
-    }
+/* ---------------------------------------------------------------------------------- Join Nodes */
+
+/// A set intersection `∩` **node** returning the items from `A` [`and`](Join::and) `B`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[non_exhaustive] // reject external struct literal construction
+pub struct Conjunct<A, B> {
+    /// A single [`Column`] or nested combination.
+    pub a: A,
+    /// A single [`Column`] or nested combination.
+    pub b: B,
+}
+
+/// A set union `∪` **node** returning the items from `A` [`or`](Join::or) `B`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[non_exhaustive] // reject external struct literal construction
+pub struct Disjunct<A, B> {
+    /// A single [`Column`] or nested combination.
+    pub a: A,
+    /// A single [`Column`] or nested combination.
+    pub b: B,
+}
 
     /// An [Adapter] that skips the first `n` items.
     ///
