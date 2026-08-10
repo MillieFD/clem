@@ -50,8 +50,9 @@ use funty::Unsigned;
 use memmap2::Mmap;
 use xxhash_rust::xxh3::Xxh3Builder;
 
-use crate::io::{self, Deserialize, Deserializer};
+use crate::io::{self, Deserialize};
 use crate::manifest::{self, Buffer};
+use crate::query::filter::Operand;
 use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Resolve, Unfiltered};
 use crate::schema::{Schema, Type, Unfolder, number};
 
@@ -317,7 +318,15 @@ pub struct Src<'q, I> {
 /* ------------------------------------------------------------------------------ Column Filters */
 
 /// A [`Column`] **adapter state machine** that applies a [`filter`](filter::Filter::filter) to each
-/// [deserialized](Deserialize) item.
+/// [deserialized](Deserialize) item without buffer exclusion using statistics.
+///
+/// ### Implementation
+///
+/// This adapter captures the filter operand `&I` into a [`Fn`] that is used to assess each
+/// [compact](Buffer::Compact) buffer and [deserialized](Deserialize) item. This adapter cannot
+/// use buffer statistics to exclude [detailed](Buffer::Detailed) candidates.
+///
+/// Use [`BoundedFilter`] for filters with buffer exclusion using statistics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Filter<'q, S, F, I>
 where
