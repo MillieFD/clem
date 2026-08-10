@@ -364,80 +364,30 @@ where
     item: PhantomData<&'q I>,
 }
 
-/* --------------------------------------------------------------------------- Column Sub-Module */
+/// A [`Column`] **adapter** that discards [`None`] items.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct IsSome<'q, S, I>
+where
+    S: Source<'q>,
+    I: Read,
+{
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    source: S,
+    /// Zero-sized **marker** carrying the flattened [`Some`] type and [`Query`] lifetime.
+    item: PhantomData<&'q I>,
+}
 
-pub mod column {
-    //! [`Column`] adapters for [`Buffer`] set reduction before [`IO`](io) at build time.
-    //!
-    //! Check out the [stream module](stream) for per-item filters applied during `IO` at read time.
-
-    use std::collections::{HashMap, HashSet};
-    use std::hash::Hash;
-    use std::iter;
-    use std::marker::PhantomData;
-    use std::ops::{Not, RangeBounds};
-
-    use bitvec::boxed::BitBox;
-    use bitvec::slice::BitSlice;
-    use funty::Unsigned;
-    use xxhash_rust::xxh3::Xxh3Builder;
-
-    use super::{Buffer, Error, Query, manifest, stream};
-    use crate::io::{self, Deserialize};
-    use crate::read::{Evaluate, IsOption, Outcome, Read, Reader, Resolve};
-    use crate::schema::BitMatch;
-
-    /* -------------------------------------------------------------------------- Public Exports */
-
-    /// An [iteration](Iterator) **state machine** over [deserialized][1] [items](I) from one
-    /// [`Column`] in the [`Query`] result set.
-    ///
-    /// [1]: Deserialize::deserialize
-    #[doc(hidden)] // returned by Adapter::src; not intended as a stable API
-    pub struct Src<'q, I> {
-        /// An immutable reference to the parent [`Query`].
-        pub query: &'q Query<'q>,
-        /// A minimal [`Column`](manifest::Column) descriptor borrowed from the parent [`Query`] for
-        /// zero-cost buffer traversal.
-        ///
-        /// The descriptor contains a [set][1] of unique [`Buffer`] descriptors in on-disk
-        /// [`Segment`][2] order.
-        ///
-        /// [1]: std::collections::BTreeSet
-        /// [2]: crate::segment::Segment
-        pub column: &'q manifest::Column,
-        /// Positional inclusion mask over the borrowed [`Buffer`] candidates set.
-        ///
-        /// The `n`th bit corresponds to the `n`th [`Buffer`] candidate: a set bit `1` includes the
-        /// buffer, a clear bit `0` excludes the buffer. The [`BTreeSet`][1] orders candidate
-        /// buffers by on-disk [`Sector`](io::Sector) which increases monotonically in write-order.
-        ///
-        /// ```text
-        /// column    [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
-        /// mask        1    0    1    1    0      Mutable owned bitmask.
-        ///             ▼         ▼    ▼
-        /// read        A         C    D           Buffers B and E are never read.
-        /// ```
-        ///
-        /// Filters can exclude buffers before [`IO`](io) by setting the corresponding bit.
-        /// Refer to the [column trait documentation](Column) for details of the available filters.
-        ///
-        /// [1]: std::collections::BTreeSet
-        pub mask: BitBox,
-        /// Type-state carrier for the requested [`item`](I) type.
-        item: PhantomData<I>,
-    }
-
-    impl<'q, I> Src<'q, I> {
-        pub(crate) fn new(query: &'q Query<'q>, column: &'q manifest::Column) -> Self {
-            Self {
-                query,
-                column,
-                mask: column.mask(),
-                item: PhantomData,
-            }
-        }
-    }
+/// A [`Column`] **adapter** that retains only [`None`] items.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct IsNone<'q, S>
+where
+    S: Source<'q>,
+{
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    source: S,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    query: PhantomData<&'q Mmap>,
+}
 
     /// A filter adapter that applies the specified `filter` to the wrapped `source`.
     pub(crate) struct Filter<S, F> {
