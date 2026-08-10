@@ -327,106 +327,32 @@ where
     /// The wrapped data source which yields [deserialized](Deserialize) items for the
     /// [`filter`](filter::Filter::filter) closure.
     source: S,
-    /// The [`filter`](filter::Filter::filter) used to test each [deserialized](Deserialize) item.
-    test: F,
+    /// The [`filter`](filter::Filter::filter) used to assess each [deserialized](Deserialize) item.
+    filter: F,
     /// Zero-sized **marker** carrying the operand type and [`Query`] lifetime.
     item: PhantomData<&'q I>,
 }
 
-    pub a: A,
-    /// A single [`Column`](column::Column) instance.
-    pub b: B,
-}
-
-/* ------------------------------------------------------------------------------ Specific Error */
-
-/// Errors returned from [`Query`] construction and execution.
-///
-/// Enum variants cover various granular error cases that may arise when working with queries.
-/// Users should consider handling errors explicitly wherever possible to provide meaningful
-/// error messages and recovery actions.
+/// A [`Column`] **adapter state machine** that applies a [`filter`](filter::Filter::filter) to each
+/// [deserialized](Deserialize) item with [`Buffer`] exclusion using statistics.
 ///
 /// ### Implementation
 ///
-/// This enum is `#[non_exhaustive]` meaning additional variants may be added in future versions.
-/// Implementers are advised to include a wildcard arm `_` to account for potential additions.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug)]
-#[non_exhaustive] // accommodate potential future error cases
-pub enum Error {
-    /// The requested [`Column`] name was not found in the query [`BTreeMap`].
-    Column {
-        /// The requested [`Column`] name.
-        name: String,
-    },
-    /// Underlying [`io::Error`] from the [msca](crate) [file](io::File).
-    Io(io::Error),
-    /// Underlying [`number::Error`] from a numerical operation or conversion.
-    Number(number::Error),
-    /// The requested [`Type`] did not match the actual on-disk [`Column`] type.
-    Type {
-        /// The [`Type`] expected by the caller.
-        expect: Type,
-        /// The actual on-disk column [`Type`].
-        actual: Type,
-    },
-    /// Attempted to [`join`][1] two [columns][2] from different [schemas][3].
-    ///
-    /// [1]: Join::and
-    /// [2]: manifest::Column
-    /// [3]: manifest::Schema
-    Join,
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Self::Column { name } => write!(f, "Column '{name}' not found"),
-            Self::Io(e) => write!(f, "Query IO error → {e}"),
-            Self::Number(e) => write!(f, "Number error → {e}"),
-            Self::Type { expect, actual } => write!(f, "Type error → {expect} ≠ {actual}"),
-            Self::Join => write!(f, "Cross-query join is not yet supported"),
-        }
-    }
-}
-
-impl std::error::Error for Error {}
-
-impl From<io::Error> for Error {
-    fn from(src: io::Error) -> Self {
-        match src {
-            io::Error::Number(e) => e.into(), // Flatten number error nesting
-            other => Self::Io(other),
-        }
-    }
-}
-
-impl From<number::Error> for Error {
-    fn from(e: number::Error) -> Self {
-        Self::Number(e)
-    }
-}
-
-impl From<TryFromIntError> for Error {
-    fn from(e: TryFromIntError) -> Self {
-        number::Error::from(e).into()
-    }
-}
-
-impl From<std::io::Error> for Error {
-    fn from(e: std::io::Error) -> Self {
-        io::Error::from(e).into()
-    }
-}
-
-//noinspection DuplicatedCode → Conversion is implemented for error types in different modules.
-impl<T, E> From<Error> for Result<T, E>
+/// This adapter holds an [`Operand`] that is used to [exclude](Operand::reduce) buffers and then
+/// test each [deserialized](Deserialize) item. Use [`Filter`] for tests which do not support
+/// buffer exclusion using statistics.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct BoundedFilter<'q, S, O, I>
 where
-    E: From<Error>,
+    S: Source<'q>,
+    O: Operand<I>,
 {
-    fn from(error: Error) -> Self {
-        Err(E::from(error))
-    }
+    /// The wrapped data source which yields [deserialized](Deserialize) items.
+    source: S,
+    /// The [`Operand`] used to assess each [`Buffer`] and [deserialized](Deserialize) item.
+    operand: O,
+    /// Zero-sized **marker** carrying the operand type and [`Query`] lifetime.
+    item: PhantomData<&'q I>,
 }
 
 /* --------------------------------------------------------------------------- Column Sub-Module */
