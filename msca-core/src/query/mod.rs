@@ -389,13 +389,22 @@ where
     query: PhantomData<&'q Mmap>,
 }
 
-    /// A filter adapter that applies the specified `filter` to the wrapped `source`.
-    pub(crate) struct Filter<S, F> {
-        /// The wrapped data source which yields items for the filter closure.
-        source: S,
-        /// A filter closure which maps each item from the source to an [`Outcome`].
-        filter: F,
-    }
+/// A [`Column`] **adapter state machine** that skips the first `n` items.
+///
+/// This adapter is initialised via [`Column`](Column)`::`[`skip`](Column::skip) and exludes any
+/// [buffers](Buffer) that are provably disjoint from the requested result set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Skip<'q, S>
+where
+    S: Source<'q>,
+{
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    source: S,
+    /// The number of items to [`skip`](Column::skip).
+    skip: usize,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    query: PhantomData<&'q Mmap>,
+}
 
     impl<S, F, O> Iterator for Filter<S, F>
     where
