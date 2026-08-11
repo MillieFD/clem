@@ -41,7 +41,7 @@ use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::TryFromIntError;
-use std::ops::Not;
+use std::ops::{Not, RangeBounds};
 use std::sync::Arc;
 
 use bitvec::boxed::BitBox;
@@ -52,9 +52,8 @@ use xxhash_rust::xxh3::Xxh3Builder;
 
 use crate::io::{self, Deserialize};
 use crate::manifest::{self, Buffer};
-use crate::query::filter::Operand;
 use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Resolve, Unfiltered};
-use crate::schema::{Schema, Type, Unfolder, number};
+use crate::schema::{BitMatch, Schema, Type, Unfolder, number};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -445,25 +444,15 @@ pub struct Disjunct<A, B> {
     pub b: B,
 }
 
-    /// An [Adapter] that skips the first `n` items.
-    ///
-    /// This `struct` is created using the [`skip`](Column::skip) method on [`Column`]. See the
-    /// function documentation for more details.
-    ///
-    /// ### Implementation
-    ///
-    /// [`Buffer`] candidates which are provably disjoint from the requested result set are excluded
-    /// eagerly at construction. The `skip` field holds the residual offset into the first retained
-    /// buffer.
-    pub(crate) struct Skip<S>
-    where
-        S: Column,
-    {
-        /// The wrapped data source.
-        source: S,
-        /// Residual offset into the first retained [`Buffer`].
-        skip: usize,
-    }
+/// A symmetric difference `△` **node** returning items from `A` [`xor`](Join::xor) `B`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[non_exhaustive] // reject external struct literal construction
+pub struct Adjunct<A, B> {
+    /// A single [`Column`] or nested combination.
+    pub a: A,
+    /// A single [`Column`] or nested combination.
+    pub b: B,
+}
 
     /// An [Adapter] that reads at most `n` items.
     ///
