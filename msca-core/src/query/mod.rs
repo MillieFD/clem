@@ -395,9 +395,9 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Skip<'q, S>
 where
-    S: Source<'q>,
+    S: Column<'q>,
 {
-    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    /// The wrapped [`Column`] which yields [deserialized](Deserialize) items.
     source: S,
     /// The number of items to [`skip`](Column::skip).
     skip: usize,
@@ -412,9 +412,9 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Take<'q, S>
 where
-    S: Source<'q>,
+    S: Column<'q>,
 {
-    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    /// The wrapped [`Column`] which yields [deserialized](Deserialize) items.
     source: S,
     /// The number of items to [`take`](Column::take).
     take: usize,
@@ -458,7 +458,7 @@ pub struct Adjunct<A, B> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SemiJoin<'q, S, K>
 where
-    S: Source<'q>,
+    S: Column<'q>,
     K: Column<'q>,
 {
     /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
@@ -473,7 +473,7 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AntiJoin<'q, S, K>
 where
-    S: Source<'q>,
+    S: Column<'q>,
     K: Column<'q>,
 {
     /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
@@ -486,13 +486,13 @@ where
 
 /* --------------------------------------------------------------------- Source Trait Definition */
 
-/// A chain of [`Column`] adapters which yield the specified [`Item`](Self::Item) type.
+/// A chain of [`Column`] adapters that yield the specified [`Item`](Self::Item) type.
 ///
 /// ### Implementation
 ///
-/// Implementations carry a `'m` lifetime from the parent [`Mmap`] to ensure no item outlives the
-/// memory map from which it was [deserialized](Deserialize). This design enables zero-copy reads.
-/// [`Clone`] the item to outlive `'m`.
+/// This trait carries a `'q` lifetime from the parent [`Query`] to ensure no item outlives the file
+/// from which it was [deserialized](Deserialize). This design enables zero-copy reads. [`Clone`]
+/// the item to outlive `'q`.
 ///
 /// ##### Construction
 ///
@@ -511,13 +511,13 @@ where
 /// short-circuiting any remaining downstream tests if the item is excluded.
 ///
 /// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
-pub trait Source<'m>
+pub trait Source<'q>
 where
-    <Self::Item as Read>::Src<'m>: Deserialize<'m, Ok = <Self::Item as Read>::Src<'m>>,
-    <Self::Item as Read>::Src<'m>: Reader<'m, Self::Item>,
+    <Self::Item as Read>::Src<'q>: Deserialize<'q, Ok = <Self::Item as Read>::Src<'q>>,
+    <Self::Item as Read>::Src<'q>: Reader<'q, Self::Item>,
 {
     /// The [deserialized](Deserialize) item type [read](Read) by the chain.
-    type Item: Read + 'm;
+    type Item: Read + 'q;
 }
 
 /* ----------------------------------------------------------------- Source Trait Implementation */
@@ -578,7 +578,7 @@ where
 
 impl<'q, S, K> Source<'q> for SemiJoin<'q, S, K>
 where
-    S: Source<'q>,
+    S: Column<'q>,
     K: Column<'q>,
 {
     type Item = S::Item;
@@ -586,7 +586,7 @@ where
 
 impl<'q, S, K> Source<'q> for AntiJoin<'q, S, K>
 where
-    S: Source<'q>,
+    S: Column<'q>,
     K: Column<'q>,
 {
     type Item = S::Item;
