@@ -519,7 +519,7 @@ where
 /// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. Each
 /// filter wraps the chain in a lazy [adapter](Adapter) that captures the necessary state to assess
 /// whole buffers. Every adapter is [monomorphized][1] against the concrete item type. No [`IO`](io)
-/// is executed until a terminal method is called e.g. [`read`][2] or [`iter`][3]
+/// is executed until a terminal method is called e.g. [`read`][2] or [`iter`][3].
 ///
 /// ##### During IO
 ///
