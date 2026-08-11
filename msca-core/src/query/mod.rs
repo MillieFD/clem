@@ -408,7 +408,7 @@ where
 
 /// A [`Column`] **adapter state machine** that reads at most `n` items.
 ///
-/// This adapter is initialised via [`Column`](Column)`::`[`take`](Column::take) and exludes any
+/// This adapter is initialised via [`Column`]`::`[`take`](Column::take) and excludes any
 /// [buffers](Buffer) that are provably disjoint from the requested result set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Take<'q, S>
