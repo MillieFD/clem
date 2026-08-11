@@ -505,8 +505,10 @@ where
 ///
 /// The adapter chain is lazy; no [`IO`](io) is executed until a terminal method such as
 /// [`read`](Column::read) or [`iter`](Column::iter) is called. Each adapter excludes candidate
-/// buffers according to the corresponding filter. The surviving buffers are used to
-/// [`build`](Build::build) an [`Iterator`] over deserialized items.
+/// buffers according to the corresponding filter. The adapter chain becomes an [`Iterator`] chain
+/// with the same shape: the [data source](iter::Src) deserializes items from **only** the surviving
+/// buffers. Downstream iterators test the item and yield an [`Outcome`], immediately
+/// short-circuiting any remaining downstream tests if the item is excluded.
 ///
 /// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
 pub trait Source<'m>
