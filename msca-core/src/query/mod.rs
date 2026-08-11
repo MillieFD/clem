@@ -52,7 +52,7 @@ use xxhash_rust::xxh3::Xxh3Builder;
 
 use crate::io::{self, Deserialize};
 use crate::manifest::{self, Buffer};
-use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Resolve, Unfiltered};
+use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Unfiltered};
 use crate::schema::{BitMatch, Schema, Type, Unfolder, number};
 
 /* ------------------------------------------------------------------------------ Public Exports */
@@ -60,7 +60,7 @@ use crate::schema::{BitMatch, Schema, Type, Unfolder, number};
 /// A composable query interface to [read](Read) data from any [msca](crate) file; initialised from
 /// [`Dataset::query`][1] and executed lazily when [`iter`](Self::iter) is polled.
 ///
-/// [`Query`] also provides a [`Column`] factory for the specified [`Schema`].
+/// [`Query`] also provides a [column](Adapter) factory for the specified [`Schema`].
 ///
 /// Refer to the [module-level documentation](self) for implementation details.
 ///
@@ -115,7 +115,7 @@ impl<'m> Query<'m> {
     /// - [`Error::Number`] if an index overflows `N`.
     /// - [`Error::Io`] if a deserialization failure occurs.
     ///
-    /// Refer to [`Query::indexed`] and [`Column::indexed`] for the public entry points.
+    /// Refer to [`Query::indexed`] and [`Adapter::indexed`] for the public entry points.
     fn intern<I, N, S>(items: S) -> Result<HashMap<I, N, Xxh3Builder>, Error>
     where
         N: Unsigned,
@@ -132,7 +132,7 @@ impl<'m> Query<'m> {
         Ok(map)
     }
 
-    /// Select a named [`Column`] from the parent [`Query`].
+    /// Select a named [`Column`](manifest::Column) from the parent [`Query`].
     ///
     /// The requested type is verified against the actual on-disk column [`Type`] exactly once.
     /// Subsequent column operations – such as filtering and deserialization – can progress
@@ -145,7 +145,7 @@ impl<'m> Query<'m> {
     /// ### Errors
     ///
     /// - [`Error::Column`] if `name` is not found in the query [`BTreeMap`].
-    /// - [`Error::Type`] if the requested `Type` does not match the on-disk `Column` type.
+    /// - [`Error::Type`] if the requested `Type` does not match the on-disk column type.
     pub fn column<'q, I>(&'q self, name: &str) -> Result<Src<'q, I>, Error>
     where
         I: Read + Clone + 'q,
@@ -174,7 +174,7 @@ impl<'m> Query<'m> {
     /// read        A         C    D           Buffers B and E are never read.
     /// ```
     ///
-    /// [`Column`] filters are applied subtractively to reduce the mask.
+    /// [Filters](Filter) are applied subtractively to reduce the mask.
     pub fn mask(&self) -> BitBox {
         let n = self.size();
         BitVec::repeat(true, n).into_boxed_bitslice()
@@ -205,11 +205,12 @@ impl<'m> Query<'m> {
     where
         I: Unfiltered<'q> + 'q,
     {
-        I::nth(self, n)?.resolve().next().transpose().map_err(Error::from)
+        use crate::read::IntoResolvedIter;
+        I::nth(self, n)?.into_resolved_iter().next().transpose().map_err(Error::from)
     }
 
     /// Return an [`Iterator`] yielding one [`Outcome`] per [deserialized][1] item from the named
-    /// [`Column`].
+    /// [`Column`](manifest::Column).
     ///
     /// The requested [`Type`] is verified against the on-disk column type exactly once. Subsequent
     /// deserialization proceeds fearlessly without additional runtime checks.
@@ -252,7 +253,7 @@ impl<'m> Query<'m> {
     ///
     /// ### Implementation
     ///
-    /// Each field of the composite is lazily [deserialized][1] from the respective [`Column`].
+    /// Each field of the composite is lazily [deserialized][1] from the respective [`Column`][2].
     /// Refer to the [unfiltered trait documentation](Unfiltered) for more details.
     ///
     /// ### Guidance
@@ -264,16 +265,18 @@ impl<'m> Query<'m> {
     /// ### Errors
     ///
     /// - [`Error::Column`] if a column named by the composite `I` is absent from the schema.
-    /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk [`Column`] type.
+    /// - [`Error::Type`] if the requested [`Type`] does not match the on-disk column type.
     ///
     /// Refer to [`Query::read`] for a non-resolved alternative that yields [`Outcome`].
     ///
     /// [1]: Deserialize::deserialize
+    /// [2]: manifest::Column
     pub fn iter<'q, I>(&'q self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'q, Error>
     where
         I: Unfiltered<'q> + 'q,
     {
-        let iter = I::unfiltered(self)?.resolve();
+        use crate::read::IntoResolvedIter;
+        let iter = I::unfiltered(self)?.into_resolved_iter();
         Ok(iter)
     }
 
@@ -299,7 +302,7 @@ impl<'m> PartialEq for Query<'m> {
 
 impl<'m> Eq for Query<'m> {}
 
-/// An immutable **data source** for downstream [`Column`] adapters on the [`Query`] result set.
+/// An immutable **data source** for downstream [adapters](Adapter) on the [`Query`] result set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Src<'q, I> {
     /// An immutable reference to the parent [`Query`].
@@ -316,8 +319,8 @@ pub struct Src<'q, I> {
 
 /* ------------------------------------------------------------------------------ Column Filters */
 
-/// A [`Column`] **adapter state machine** that applies a [`filter`](filter::Filter::filter) to each
-/// [deserialized](Deserialize) item without buffer exclusion using statistics.
+/// A [column][1] [adapter](Adapter) that applies a [Filter] to each [deserialized](Deserialize)
+/// item **without** [detailed](Buffer::Detailed) buffer exclusion using statistics.
 ///
 /// ### Implementation
 ///
@@ -325,7 +328,9 @@ pub struct Src<'q, I> {
 /// [compact](Buffer::Compact) buffer and [deserialized](Deserialize) item. This adapter cannot
 /// use buffer statistics to exclude [detailed](Buffer::Detailed) candidates.
 ///
-/// Use [`BoundedFilter`] for filters with buffer exclusion using statistics.
+/// Use [`BoundedFilter`] for filters that **can** assess [detailed](Buffer::Detailed) candidates.
+///
+/// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Filter<'q, S, F, I>
 where
@@ -341,14 +346,17 @@ where
     item: PhantomData<&'q I>,
 }
 
-/// A [`Column`] **adapter state machine** that applies a [`filter`](filter::Filter::filter) to each
-/// [deserialized](Deserialize) item with [`Buffer`] exclusion using statistics.
+/// A [column][1] [adapter](Adapter) that applies a [Filter] to each [deserialized](Deserialize)
+/// item **with** [detailed](Buffer::Detailed) buffer exclusion using statistics.
 ///
 /// ### Implementation
 ///
-/// This adapter holds an [`Operand`] that is used to [exclude](Operand::reduce) buffers and then
-/// test each [deserialized](Deserialize) item. Use [`Filter`] for tests which do not support
-/// buffer exclusion using statistics.
+/// This adapter holds an [`Operand`] that is used to assess [compact](Buffer::Compact) **and**
+/// [detailed](Buffer::Detailed) buffers. Use [`Filter`] for tests that **do not** support
+/// [detailed](Buffer::Detailed) buffer exclusion using statistics. The operand is also used to
+/// assess deserialized items.
+///
+/// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct BoundedFilter<'q, S, O, I>
 where
@@ -363,7 +371,7 @@ where
     item: PhantomData<&'q I>,
 }
 
-/// A [`Column`] **adapter** that discards [`None`] items.
+/// A [column](manifest::Column) [adapter](Adapter) that discards [`None`] items.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct IsSome<'q, S, I>
 where
@@ -376,7 +384,7 @@ where
     item: PhantomData<&'q I>,
 }
 
-/// A [`Column`] **adapter** that retains only [`None`] items.
+/// A [column](manifest::Column) [adapter](Adapter) that retains only [`None`] items.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct IsNone<'q, S>
 where
@@ -388,35 +396,35 @@ where
     query: PhantomData<&'q Mmap>,
 }
 
-/// A [`Column`] **adapter state machine** that skips the first `n` items.
+/// A [column](manifest::Column) [adapter](Adapter) that skips the first `n` items.
 ///
-/// This adapter is initialised via [`Column`]`::`[`skip`](Column::skip) and excludes any
-/// [buffers](Buffer) that are provably disjoint from the requested result set.
+/// This adapter is initialised via [`Adapter::skip`] and excludes any [buffers](Buffer) that are
+/// provably disjoint from the requested result set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Skip<'q, S>
 where
-    S: Column<'q>,
+    S: Adapter<'q>,
 {
-    /// The wrapped [`Column`] which yields [deserialized](Deserialize) items.
+    /// The wrapped [`Adapter`] which yields [deserialized](Deserialize) items.
     source: S,
-    /// The number of items to [`skip`](Column::skip).
+    /// The number of items to [`skip`](Adapter::skip).
     skip: usize,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
     mmap: PhantomData<&'q Mmap>,
 }
 
-/// A [`Column`] **adapter state machine** that reads at most `n` items.
+/// A [column](manifest::Column) [adapter](Adapter) that reads at most `n` items.
 ///
-/// This adapter is initialised via [`Column`]`::`[`take`](Column::take) and excludes any
-/// [buffers](Buffer) that are provably disjoint from the requested result set.
+/// This adapter is initialised via [`Adapter::take`] and excludes any [buffers](Buffer) that are
+/// provably disjoint from the requested result set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Take<'q, S>
 where
-    S: Column<'q>,
+    S: Adapter<'q>,
 {
-    /// The wrapped [`Column`] which yields [deserialized](Deserialize) items.
+    /// The wrapped [`Adapter`] which yields [deserialized](Deserialize) items.
     source: S,
-    /// The number of items to [`take`](Column::take).
+    /// The number of items to [`take`](Adapter::take).
     take: usize,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
     mmap: PhantomData<&'q Mmap>,
@@ -428,9 +436,9 @@ where
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[non_exhaustive] // reject external struct literal construction
 pub struct Conjunct<A, B> {
-    /// A single [`Column`] or nested combination.
+    /// A single [`Adapter`] or nested combination.
     pub a: A,
-    /// A single [`Column`] or nested combination.
+    /// A single [`Adapter`] or nested combination.
     pub b: B,
 }
 
@@ -438,9 +446,9 @@ pub struct Conjunct<A, B> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[non_exhaustive] // reject external struct literal construction
 pub struct Disjunct<A, B> {
-    /// A single [`Column`] or nested combination.
+    /// A single [`Adapter`] or nested combination.
     pub a: A,
-    /// A single [`Column`] or nested combination.
+    /// A single [`Adapter`] or nested combination.
     pub b: B,
 }
 
@@ -448,18 +456,20 @@ pub struct Disjunct<A, B> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[non_exhaustive] // reject external struct literal construction
 pub struct Adjunct<A, B> {
-    /// A single [`Column`] or nested combination.
+    /// A single [`Adapter`] or nested combination.
     pub a: A,
-    /// A single [`Column`] or nested combination.
+    /// A single [`Adapter`] or nested combination.
     pub b: B,
 }
 
-/// A [`Column`] **adapter** retaining only items from `S` that are also specified in `K`.
+/// A [column][1] [adapter](Adapter) retaining only items from `S` that are also present in `K`.
+///
+/// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct SemiJoin<'q, S, K>
 where
-    S: Column<'q>,
-    K: Column<'q>,
+    S: Adapter<'q>,
+    K: Adapter<'q>,
 {
     /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
     source: S,
@@ -469,12 +479,14 @@ where
     query: PhantomData<&'q Mmap>,
 }
 
-/// A [`Column`] **adapter** retaining only items from `S` that are **not** specified in `K`.
+/// A [column][1] [adapter](Adapter) retaining only items from `S` that are **not** present in `K`.
+///
+/// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct AntiJoin<'q, S, K>
 where
-    S: Column<'q>,
-    K: Column<'q>,
+    S: Adapter<'q>,
+    K: Adapter<'q>,
 {
     /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
     source: S,
@@ -486,7 +498,15 @@ where
 
 /* --------------------------------------------------------------------- Source Trait Definition */
 
-/// A chain of [`Column`] adapters that yield the specified [`Item`](Self::Item) type.
+/// A chain of [adapters](Adapter) that yield the specified [`Item`](Self::Item) type.
+///
+/// ### Guidance
+///
+/// Each [`Filter`] is applied in the order of declaration. Filters are lazy and short-circuiting:
+/// Downstream filters **never** assess [buffers](Buffer) and [deserialized](Deserialize) items that
+/// are already excluded by upstream filters. Users are therefore advised to think carefully about
+/// the filter order; declare more restrictive filters early to reduce the result set quickly and
+/// minimise work for subsequent filters.
 ///
 /// ### Implementation
 ///
@@ -494,23 +514,24 @@ where
 /// from which it was [deserialized](Deserialize). This design enables zero-copy reads. [`Clone`]
 /// the item to outlive `'q`.
 ///
-/// ##### Construction
+/// ##### Before IO
 ///
-/// Every adapter chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set.
-/// Each subsequent filter wraps the chain within a **lazy adapter** that captures the necessary
-/// state to [include](Outcome::Include) or [exclude](Outcome::Exclude) individual items and whole
-/// buffers. Every downstream adapter is [monomorphized][1] using the concrete item type.
+/// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. Each
+/// filter wraps the chain in a lazy [adapter](Adapter) that captures the necessary state to assess
+/// whole buffers. Every adapter is [monomorphized][1] against the concrete item type. No [`IO`](io)
+/// is executed until a terminal method is called e.g. [`read`][2] or [`iter`][3]
 ///
-/// ##### Resolution
+/// ##### During IO
 ///
-/// The adapter chain is lazy; no [`IO`](io) is executed until a terminal method such as
-/// [`read`](Column::read) or [`iter`](Column::iter) is called. Each adapter excludes candidate
-/// buffers according to the corresponding filter. The adapter chain becomes an [`Iterator`] chain
-/// with the same shape: the [data source](iter::Src) deserializes items from **only** the surviving
-/// buffers. Downstream iterators test the item and yield an [`Outcome`], immediately
-/// short-circuiting any remaining downstream tests if the item is excluded.
+/// After [reducing](Reduce::reduce) the set of candidate buffers, the buffer filter chain is
+/// [resolved](Resolve::resolve) into an item filter [`Iterator`] chain of the same shape. The
+/// innermost [data source](iter::Src) deserializes items from **only** the surviving buffers.
+/// Downstream adapters test the item and yield an [`Outcome`], immediately short-circuiting once
+/// the item is excluded.
 ///
 /// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
+/// [2]: Adapter::read
+/// [3]: Adapter::iter
 pub trait Source<'q>
 where
     <Self::Item as Read>::Src<'q>: Deserialize<'q, Ok = <Self::Item as Read>::Src<'q>>,
@@ -564,30 +585,30 @@ where
 
 impl<'q, S> Source<'q> for Skip<'q, S>
 where
-    S: Column<'q>,
+    S: Adapter<'q>,
 {
     type Item = S::Item;
 }
 
 impl<'q, S> Source<'q> for Take<'q, S>
 where
-    S: Column<'q>,
+    S: Adapter<'q>,
 {
     type Item = S::Item;
 }
 
 impl<'q, S, K> Source<'q> for SemiJoin<'q, S, K>
 where
-    S: Column<'q>,
-    K: Column<'q>,
+    S: Adapter<'q>,
+    K: Adapter<'q>,
 {
     type Item = S::Item;
 }
 
 impl<'q, S, K> Source<'q> for AntiJoin<'q, S, K>
 where
-    S: Column<'q>,
-    K: Column<'q>,
+    S: Adapter<'q>,
+    K: Adapter<'q>,
 {
     type Item = S::Item;
 }
