@@ -613,12 +613,79 @@ where
     type Item = S::Item;
 }
 
-        fn stream(&self) -> Result<impl Iterator<Item = Outcome<S::Item>>, Error> {
-            Ok(Filter {
-                source: self.source.stream()?,
-                filter: &self.filter,
-            })
-        }
+/* --------------------------------------------------------------------- Reduce Trait Definition */
+
+/// A **[buffer](Buffer) [filter](Filter) chain** that [reduces](Reduce::reduce) the candidate
+/// buffer mask before [resolving](Resolve::resolve) into an item filter [`Iterator`] chain of the
+/// same shape.
+///
+/// ### Lifetime
+///
+/// This trait carries a `'q` lifetime from the parent [`Query`] to ensure no item outlives the file
+/// from which it was [deserialized](Deserialize). This design enables zero-copy reads. [`Clone`]
+/// the item to outlive `'q`.
+///
+/// ### Guidance
+///
+/// Each [`Filter`] is applied in the order of declaration. Filters are lazy and short-circuiting:
+/// Downstream filters **never** assess [buffers](Buffer) and [deserialized](Deserialize) items that
+/// are already excluded by upstream filters. Users are therefore advised to think carefully about
+/// the filter order; declare more restrictive filters early to reduce the result set quickly and
+/// minimise work for subsequent filters.
+///
+/// ### Implementation
+///
+/// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. Each
+/// filter wraps the chain in a lazy [adapter](Adapter) that captures the necessary state to assess
+/// whole buffers. Every adapter is [monomorphized][1] against the concrete item type. No [`IO`](io)
+/// is executed until a terminal method is called e.g. [`read`][2] or [`iter`][3].
+///
+/// Refer to the [source trait documentation](Source) for more details.
+pub trait Reduce<'q> {
+    /// The resolved type returned by [`reduce`](Self::reduce).
+    type Ok;
+
+    /// Returns a reference to the underlying [`Query`].
+    fn query(&self) -> &'q Query<'q>;
+
+    /// Reduce the provided [`Buffer`] mask by [resolving](Resolve::resolve) the [`Adapter`] chain.
+    ///
+    /// ### Guidance
+    ///
+    /// Each [`Filter`] is applied in the order of declaration. Downstream filters **never** assess
+    /// [buffers](Buffer) that are already excluded by upstream filters. Users are therefore advised
+    /// to think carefully about the filter order; declare more restrictive filters early to reduce
+    /// the result set quickly and minimise work for subsequent filters.
+    ///
+    /// ### Errors
+    ///
+    /// - [`Error::Io`] if a buffer statistic or compact item cannot be resolved.
+    /// - [`Error::Number`] if a recorded item count exceeds [`usize`] on the target platform.
+    ///
+    /// Refer to [`Query::mask`] for more details.
+    fn reduce(self, mask: &mut BitBox) -> Result<Self::Ok, Error>;
+}
+
+/* ----------------------------------------------------------------- Reduce Trait Implementation */
+
+impl<'q, I> Reduce<'q> for Src<'q, I>
+where
+    I: Read + Clone + 'q,
+    I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
+{
+    type Ok = Self;
+
+    fn query(&self) -> &'q Query<'q> {
+        self.query
+    }
+
+    /// [`Src`] is not a [`Filter`]; the `mask` is unaltered by definition.
+    #[allow(unused_variables, reason = "query::Src includes all buffers")]
+    fn reduce(self, mask: &mut BitBox) -> Result<Self, Error> {
+        Ok(self)
+    }
+}
+
 
         fn retain<B, G, I>(&mut self, bounds: &[B], test: &G) -> Result<&mut Self, Error>
         where
