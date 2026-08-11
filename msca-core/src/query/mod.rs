@@ -391,7 +391,7 @@ where
 
 /// A [`Column`] **adapter state machine** that skips the first `n` items.
 ///
-/// This adapter is initialised via [`Column`](Column)`::`[`skip`](Column::skip) and exludes any
+/// This adapter is initialised via [`Column`]`::`[`skip`](Column::skip) and excludes any
 /// [buffers](Buffer) that are provably disjoint from the requested result set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Skip<'q, S>
