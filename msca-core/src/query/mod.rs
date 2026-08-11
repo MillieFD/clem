@@ -12,15 +12,16 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //!
 //! ---
 //!
-//! Each new `Query` begins with every [`Column`] and every [`Buffer`] from the specified
-//! [`Schema`]. Individual columns can be resolved and filtered to subtractively reduce the result
-//! set. Some filters are evaluated eagerly **before** file IO; removing individual buffers using
-//! [manifest] statistics. Other filters are attached to read-time adapters and evaluated
-//! lazily **during** [deserialization](Deserialize).
+//! Each new `Query` begins with every [`Column`](manifest::Column) and every [`Buffer`] from the
+//! specified [`Schema`].
 //!
-//! `Query` provides a factory for read-only columns over one schema. Filters wrap the column with
-//! concrete typed state and assess each item **after** deserialization – every item is deserialized
-//! exactly once and every infallible filter [`Fn`] is monomorphized by the compiler.
+//! - Use [`Query::read`] or [`Query::iter`] to pull every item from every column without filters.
+//! - Use [`Query::column`] to extract individual columns which can then be [filtered](Filter).
+//!
+//! Filters subtractively reduce the result set. Filters can act at two points in the query
+//! lifecycle: **buffer filters** are evaluated **before** file [`IO`](io); **item filters** are
+//! evaluated **after** [deserialization](Deserialize). Every item is deserialized exactly once and
+//! every infallible filter [`Fn`] is monomorphized by the compiler.
 //!
 //! ```rust,ignore
 //! let overheating = dataset
@@ -30,8 +31,7 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //!     .iter();
 //! ```
 //!
-//! Items are deserialized exactly once when the lazy [`Iterator`] returned by a terminal method is
-//! polled.
+//! Items are deserialized lazily when the [`Iterator`] returned by a terminal method is polled.
 
 #![doc = include_str!("../../../doc/query-filters.md")]
 #![doc = include_str!("../../../doc/query-columns.md")]
