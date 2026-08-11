@@ -523,11 +523,10 @@ where
 ///
 /// ##### During IO
 ///
-/// After [reducing](Reduce::reduce) the set of candidate buffers, the buffer filter chain is
-/// [resolved](Resolve::resolve) into an item filter [`Iterator`] chain of the same shape. The
-/// innermost [data source](iter::Src) deserializes items from **only** the surviving buffers.
-/// Downstream adapters test the item and yield an [`Outcome`], immediately short-circuiting once
-/// the item is excluded.
+/// The buffer filter chain is [resolved](Resolve::resolve) into an item filter [`Iterator`] chain
+/// of the same shape. The innermost [data source](iter::Src) deserializes items from **only** the
+/// surviving buffers. Downstream adapters test the item and yield an [`Outcome`], immediately
+/// short-circuiting once the item is excluded.
 ///
 /// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
 /// [2]: Adapter::read
