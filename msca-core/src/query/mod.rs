@@ -454,25 +454,35 @@ pub struct Adjunct<A, B> {
     pub b: B,
 }
 
-    /// An [Adapter] that reads at most `n` items.
-    ///
-    /// This `struct` is created using the [`take`](Column::take) method on [`Column`]. See the
-    /// function documentation for more details.
-    ///
-    /// ### Implementation
-    ///
-    /// [`Buffer`] candidates which are provably disjoint from the requested result set are excluded
-    /// eagerly at construction. The `skip` field holds the number of requested items. The adapter
-    /// applies [`Iterator::take`] to the underlying data source at read-time.
-    pub(crate) struct Take<S>
-    where
-        S: Column,
-    {
-        /// The wrapped data source.
-        source: S,
-        /// The number of requested items.
-        take: usize,
-    }
+/// A [`Column`] **adapter** retaining only items from `S` that are also specified in `K`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SemiJoin<'q, S, K>
+where
+    S: Source<'q>,
+    K: Column<'q>,
+{
+    /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
+    source: S,
+    /// The data [`Source`] that yields [deserialized](Deserialize) items to include from `S`.
+    keys: K,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    query: PhantomData<&'q Mmap>,
+}
+
+/// A [`Column`] **adapter** retaining only items from `S` that are **not** specified in `K`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct AntiJoin<'q, S, K>
+where
+    S: Source<'q>,
+    K: Column<'q>,
+{
+    /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
+    source: S,
+    /// The data [`Source`] that yields [deserialized](Deserialize) items to exclude from `S`.
+    keys: K,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    query: PhantomData<&'q Mmap>,
+}
 
     /* ---------------------------------------------------------------- Adapter Trait Definition */
 
