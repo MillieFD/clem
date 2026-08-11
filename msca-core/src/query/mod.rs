@@ -484,76 +484,111 @@ where
     query: PhantomData<&'q Mmap>,
 }
 
-    /* ---------------------------------------------------------------- Adapter Trait Definition */
+/* --------------------------------------------------------------------- Source Trait Definition */
 
-    /// A type which can communicate with upstream and downstream [`Column`] types.
-    #[doc(hidden)] // reachable through the blanket Column implementation
-    pub trait Adapter {
-        /// The [deserialized](Deserialize) item type yielded by this column.
-        type Item: Read;
+/// A chain of [`Column`] adapters which yield the specified [`Item`](Self::Item) type.
+///
+/// ### Implementation
+///
+/// Implementations carry a `'m` lifetime from the parent [`Mmap`] to ensure no item outlives the
+/// memory map from which it was [deserialized](Deserialize). This design enables zero-copy reads.
+/// [`Clone`] the item to outlive `'m`.
+///
+/// ##### Construction
+///
+/// Every adapter chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set.
+/// Each subsequent filter wraps the chain within a **lazy adapter** that captures the necessary
+/// state to [include](Outcome::Include) or [exclude](Outcome::Exclude) individual items and whole
+/// buffers. Every downstream adapter is [monomorphized][1] using the concrete item type.
+///
+/// ##### Resolution
+///
+/// The adapter chain is lazy; no [`IO`](io) is executed until a terminal method such as
+/// [`read`](Column::read) or [`iter`](Column::iter) is called. Each adapter excludes candidate
+/// buffers according to the corresponding filter. The surviving buffers are used to
+/// [`build`](Build::build) an [`Iterator`] over deserialized items.
+///
+/// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
+pub trait Source<'m>
+where
+    <Self::Item as Read>::Src<'m>: Deserialize<'m, Ok = <Self::Item as Read>::Src<'m>>,
+    <Self::Item as Read>::Src<'m>: Reader<'m, Self::Item>,
+{
+    /// The [deserialized](Deserialize) item type [read](Read) by the chain.
+    type Item: Read + 'm;
+}
 
-        fn root<'a>(&'a self) -> &'a Root<'a, Self::Item>;
+/* ----------------------------------------------------------------- Source Trait Implementation */
 
-        fn buffers(&mut self) -> &mut Vec<Buffer>;
+impl<'q, I> Source<'q> for Src<'q, I>
+where
+    I: Read + Clone + 'q,
+    I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
+{
+    type Item = I;
+}
 
-        fn stream(&self) -> Result<impl Iterator<Item = Outcome<Self::Item>>, Error>;
+impl<'q, S, F, I> Source<'q> for Filter<'q, S, F, I>
+where
+    S: Source<'q>,
+    F: Fn(&I) -> bool,
+{
+    type Item = S::Item;
+}
 
-        fn count(&self) -> u64 {
-            self.root().buffers.iter().map(Buffer::count).sum()
-        }
+impl<'q, S, P, I> Source<'q> for BoundedFilter<'q, S, P, I>
+where
+    S: Source<'q>,
+    P: Operand<I>,
+{
+    type Item = S::Item;
+}
 
-        fn retain<B, F, I>(&mut self, bounds: &[B], test: &F) -> Result<&mut Self, Error>
-        where
-            Self::Item: Evaluate<I>,
-            B: RangeBounds<I>,
-            F: Fn(&I) -> bool,
-            I: for<'de> Deserialize<'de, Ok = I> + PartialOrd;
-    }
+impl<'q, S, I> Source<'q> for IsSome<'q, S, I>
+where
+    S: Source<'q>,
+    I: Read + Clone + 'q,
+    I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
+{
+    type Item = I;
+}
 
-    /* ------------------------------------------------------------ Adapter Trait Implementation */
+impl<'q, S> Source<'q> for IsNone<'q, S>
+where
+    S: Source<'q>,
+{
+    type Item = S::Item;
+}
 
-    impl<'q, I> Adapter for Root<'q, I>
-    where
-        I: Read + Clone + 'q,
-        I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
-    {
-        type Item = I;
+impl<'q, S> Source<'q> for Skip<'q, S>
+where
+    S: Column<'q>,
+{
+    type Item = S::Item;
+}
 
-        fn root(&self) -> &Self {
-            self
-        }
+impl<'q, S> Source<'q> for Take<'q, S>
+where
+    S: Column<'q>,
+{
+    type Item = S::Item;
+}
 
-        fn buffers(&mut self) -> &mut Vec<Buffer> {
-            &mut self.buffers
-        }
+impl<'q, S, K> Source<'q> for SemiJoin<'q, S, K>
+where
+    S: Source<'q>,
+    K: Column<'q>,
+{
+    type Item = S::Item;
+}
 
-        fn stream(&self) -> Result<impl Iterator<Item = Outcome<I>>, Error> {
-        }
-
-        fn retain<B, F, O>(&mut self, bounds: &[B], test: &F) -> Result<&mut Self, Error>
-        where
-            I: Evaluate<O>,
-            B: RangeBounds<O>,
-            F: Fn(&O) -> bool,
-            O: for<'de> Deserialize<'de, Ok = O> + PartialOrd,
-        {
-        }
-    }
-
-    impl<S, F> Adapter for Filter<S, F>
-    where
-        S: Adapter,
-        F: Fn(S::Item) -> Outcome<S::Item>,
-    {
-        type Item = S::Item;
-
-        fn root(&self) -> &Src<S::Item> {
-            self.source.root()
-        }
-
-        fn buffers(&mut self) -> &mut Vec<Buffer> {
-            self.source.buffers()
-        }
+impl<'q, S, K> Source<'q> for AntiJoin<'q, S, K>
+where
+    S: Source<'q>,
+    K: Column<'q>,
+{
+    type Item = S::Item;
+}
 
         fn stream(&self) -> Result<impl Iterator<Item = Outcome<S::Item>>, Error> {
             Ok(Filter {
