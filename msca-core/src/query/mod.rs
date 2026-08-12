@@ -542,6 +542,31 @@ where
 {
     /// The [deserialized](Deserialize) item type [read](Read) by the chain.
     type Item: Read + 'q;
+
+    /// Returns the borrowed [`Buffer`] descriptor [set](BTreeSet) for [`self`](manifest::Column)
+    /// across all segments in [`Sector`](io::Sector) order.
+    fn buffers(&self) -> &'q BTreeSet<Buffer>;
+
+    /// Returns the read-only [memory map](Mmap) backed by the immutable segment region.
+    ///
+    /// Refer to the [safety documentation](io::File::mmap) for details.
+    fn mmap(&self) -> &'q Mmap;
+
+    /// Returns the logical number of items recorded in each [`Buffer`].
+    ///
+    /// ### Errors
+    ///
+    /// Returns [`Error::Number`] if any recorded count overflows [`usize`].
+    fn counts<'s>(&'s self, mask: &'s BitBox) -> impl Iterator<Item = Result<usize, Error>> + 's
+    where
+        'q: 's,
+    {
+        let buffers = self.buffers();
+        mask.iter().by_vals().zip(buffers).map(|b| match b.0 {
+            true => b.1.count().try_into().map_err(Error::from),
+            false => Ok(usize::MIN),
+        })
+    }
 }
 
 /* ----------------------------------------------------------------- Source Trait Implementation */
