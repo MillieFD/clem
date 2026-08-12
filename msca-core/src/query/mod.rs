@@ -41,7 +41,7 @@ use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::TryFromIntError;
-use std::ops::Not;
+use std::ops::{Deref, Not};
 use std::sync::Arc;
 
 use bitvec::boxed::BitBox;
@@ -146,7 +146,7 @@ impl<'m> Query<'m> {
     ///
     /// - [`Error::Column`] if `name` is not found in the query [`BTreeMap`].
     /// - [`Error::Type`] if the requested `Type` does not match the on-disk column type.
-    pub fn column<'q, I>(&'q self, name: &str) -> Result<Src<'q, I>, Error>
+    pub fn column<'q, I>(&'q self, name: &str) -> Result<Column<'q, I>, Error>
     where
         I: Read + Clone + 'q,
         I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
@@ -155,8 +155,8 @@ impl<'m> Query<'m> {
         if let Some(entry) = self.columns.get(name) {
             let buffers = &entry.exact::<I>()?.buffers;
             // SAFETY: on-disk column type verified against requested I via manifest::Column::exact
-            let src = Src { query: self, buffers, item: PhantomData };
-            Ok(src)
+            let column = Src { query: self, buffers }.into();
+            Ok(column)
         } else {
             Error::Column { name: name.into() }.into()
         }
@@ -300,9 +300,9 @@ impl<'m> PartialEq for Query<'m> {
 
 impl<'m> Eq for Query<'m> {}
 
-/// An immutable **data source** for downstream [adapters](Adapter) on the [`Query`] result set.
+/// An immutable **byte source** for one [`Column`] and all subsequent [adapters](Adapter).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Src<'q, I> {
+pub struct Src<'q> {
     /// An immutable reference to the parent [`Query`].
     query: &'q Query<'q>,
     /// [`Buffer`] descriptors for the [`Column`][1] across all segments in [`Sector`][2] order.
@@ -311,8 +311,103 @@ pub struct Src<'q, I> {
     /// [2]: io::Sector
     // NOTE: sector offset increases monotonically → sector order matches on-disk segment order
     buffers: &'q BTreeSet<Buffer>,
+}
+
+impl<'q> Src<'q> {
+    /// Returns a new [mask](BitBox) that includes every [`Buffer`] for this column.
+    ///
+    /// `Buffer` inclusion is determined using a positional mask where the `n`th bit corresponds
+    /// to the `n`th buffer from the `n`th data segment.
+    ///
+    /// ```text
+    /// buffers   [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
+    /// mask        1    0    1    1    0      Mutable owned bitmask.
+    ///             ▼         ▼    ▼
+    /// read        A         C    D           Buffers B and E are never read.
+    /// ```
+    ///
+    /// [Filters](Filter) are applied subtractively to reduce the mask.
+    pub(crate) fn mask(&self) -> BitBox {
+        let n = self.buffers.len();
+        BitVec::repeat(true, n).into_boxed_bitslice()
+    }
+
+    /// Returns the logical number of items recorded in each [`Buffer`].
+    ///
+    /// ### Errors
+    ///
+    /// Returns [`Error::Number`] if any recorded count overflows [`usize`].
+    pub(crate) fn counts(&self, mask: &BitBox) -> impl Iterator<Item = Result<usize, Error>> {
+        self.buffers.iter().zip(mask.iter().by_vals()).map(|e| match e.1 {
+            true => e.0.count().try_into().map_err(Error::from),
+            false => Ok(usize::MIN),
+        })
+    }
+
+    /// Returns **only** the [`Buffer`] descriptors included by the [mask](BitBox) in [`Sector`][1]
+    /// order.
+    ///
+    /// [1]: io::Sector
+    // NOTE: owned slice can outlive the mask; Box prevents resize allocations at the type level
+    pub(crate) fn retained(&self, mask: &BitBox) -> Box<[&'q Buffer]> {
+        mask.iter().by_vals().zip(self.buffers).filter(|b| b.0).map(|b| b.1).collect()
+    }
+
+    /// An iterator method that applies a fallible [test](FnMut) to each [`Buffer`] descriptor:
+    ///
+    /// - Skips any buffers that are already excluded by the [mask](BitBox).
+    /// - Retains all buffers for which `test` returns `true`.
+    /// - Excludes any buffers for which `test` returns `false`.
+    ///
+    /// Returns the number of included buffers. Refer to [`Src::mask`] for more details.
+    ///
+    /// ### Errors
+    ///
+    /// Forwards [`Error::Io`] from the fallible `test` function.
+    pub(crate) fn try_exclude<F>(&self, mask: &mut BitBox, mut test: F) -> Result<usize, Error>
+    where
+        F: FnMut(&Buffer, &'q Mmap) -> Result<bool, io::Error>,
+    {
+        mask.iter_mut().zip(self.buffers).try_fold(usize::MIN, |n, (bit, buf)| {
+            if *bit {
+                match test(buf, &self.query.mmap)? {
+                    true => return Ok(n + 1),
+                    false => bit.commit(false),
+                }
+            };
+            Ok(n)
+        })
+    }
+}
+
+/// A **strongly typed data source** for one [`Column`] and all subsequent [adapters](Adapter).
+///
+/// This type fixes a generic [byte source](Src) to a specified [`item`](I) type that is
+/// [verified](manifest::Column::exact) exactly once against the actual on-disk column type during
+/// [initialisation](Query::column). This design enables the compiler to [monomorphize][1] all
+/// subsequent operations and progress fearlessly without runtime type checks.
+///
+/// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct Column<'q, I> {
+    /// The on-disk source this column reads from.
+    src: Src<'q>,
     /// Zero-sized type-state for the requested [`item`](I) type.
     item: PhantomData<I>,
+}
+
+impl<'q, I> From<Src<'q>> for Column<'q, I> {
+    fn from(src: Src<'q>) -> Self {
+        Self { src, item: PhantomData }
+    }
+}
+
+impl<'q, I> Deref for Column<'q, I> {
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.src
+    }
 }
 
 /* ------------------------------------------------------------------------------ Column Filters */
@@ -344,6 +439,18 @@ where
     item: PhantomData<&'q I>,
 }
 
+impl<'q, S, F, I> Deref for Filter<'q, S, F, I>
+where
+    S: Source<'q>,
+    F: Fn(&I) -> bool,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
+}
+
 /// A [column][1] [adapter](Adapter) that applies a [Filter] to each [deserialized](Deserialize)
 /// item **with** [detailed](Buffer::Detailed) buffer exclusion using statistics.
 ///
@@ -369,6 +476,18 @@ where
     item: PhantomData<&'q I>,
 }
 
+impl<'q, S, F, I> Deref for BoundedFilter<'q, S, F, I>
+where
+    S: Source<'q>,
+    F: filter::BoundedFilter<I>,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
+}
+
 /// A [column](manifest::Column) [adapter](Adapter) that discards [`None`] items.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct IsSome<'q, S, I>
@@ -380,6 +499,18 @@ where
     source: S,
     /// Zero-sized **marker** carrying the flattened [`Some`] type and [`Query`] lifetime.
     item: PhantomData<&'q I>,
+}
+
+impl<'q, S, I> Deref for IsSome<'q, S, I>
+where
+    S: Source<'q>,
+    I: Read,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
 }
 
 /// A [column](manifest::Column) [adapter](Adapter) that retains only [`None`] items.
