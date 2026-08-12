@@ -852,6 +852,21 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
         })
     }
 
+    /// An [excluder](Exclude) method that applies a fallible [filter](Fn) to each [`Buffer`]
+    /// descriptor with [detailed](Buffer::Detailed) variant exclusion using statistics.
+    ///
+    /// ### Guidance
+    ///
+    /// Use [`Exclude::with_item`] for filters that **cannot** assess detailed candidates.
+    ///
+    /// ### Errors
+    ///
+    /// - Returns [`Error::Io`] if a [compact][1] item cannot be read from the [memory map](Mmap).
+    /// - Forwards [`Error::Io`] from the fallible `test` function.
+    ///
+    /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
+    ///
+    /// [1]: Buffer::Compact
     fn with_min_max<I, F, R>(&self, mask: &mut BitBox, f_item: F, f_range: R) -> Result<usize, Error>
     where
         Self::Item: Evaluate<I>,
