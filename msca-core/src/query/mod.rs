@@ -205,8 +205,7 @@ impl<'m> Query<'m> {
     where
         I: Unfiltered<'q> + 'q,
     {
-        use crate::read::IntoResolvedIter;
-        I::nth(self, n)?.into_resolved_iter().next().transpose().map_err(Error::from)
+        I::nth(self, n)?.resolve().next().transpose().map_err(Error::from)
     }
 
     /// Return an [`Iterator`] yielding one [`Outcome`] per [deserialized][1] item from the named
@@ -275,8 +274,7 @@ impl<'m> Query<'m> {
     where
         I: Unfiltered<'q> + 'q,
     {
-        use crate::read::IntoResolvedIter;
-        let iter = I::unfiltered(self)?.into_resolved_iter();
+        let iter = I::unfiltered(self)?.resolve();
         Ok(iter)
     }
 
