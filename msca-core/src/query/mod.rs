@@ -550,7 +550,18 @@ where
     /// The number of items to [`skip`](Adapter::skip).
     skip: usize,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    mmap: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'q Mmap>,
+}
+
+impl<'q, S> Deref for Skip<'q, S>
+where
+    S: Adapter<'q>,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
 }
 
 /// A [column](manifest::Column) [adapter](Adapter) that reads at most `n` items.
@@ -567,7 +578,18 @@ where
     /// The number of items to [`take`](Adapter::take).
     take: usize,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    mmap: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'q Mmap>,
+}
+
+impl<'q, S> Deref for Take<'q, S>
+where
+    S: Adapter<'q>,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
 }
 
 /* ---------------------------------------------------------------------------------- Join Nodes */
@@ -616,7 +638,19 @@ where
     /// The data [`Source`] that yields [deserialized](Deserialize) items to include from `S`.
     keys: K,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    query: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'q Mmap>,
+}
+
+impl<'q, S, K> Deref for SemiJoin<'q, S, K>
+where
+    S: Adapter<'q>,
+    K: Adapter<'q>,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
 }
 
 /// A [column][1] [adapter](Adapter) retaining only items from `S` that are **not** present in `K`.
@@ -633,7 +667,19 @@ where
     /// The data [`Source`] that yields [deserialized](Deserialize) items to exclude from `S`.
     keys: K,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    query: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'q Mmap>,
+}
+
+impl<'q, S, K> Deref for AntiJoin<'q, S, K>
+where
+    S: Adapter<'q>,
+    K: Adapter<'q>,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
 }
 
 /* --------------------------------------------------------------------- Source Trait Definition */
