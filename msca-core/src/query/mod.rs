@@ -826,6 +826,16 @@ where
 /// [1]: bitvec::ptr::BitPtr
 /// [2]: crate::segment::Segment
 pub(crate) trait Exclude<'q>: Source<'q> + Sized {
+    /// An [excluder](Exclude) method that applies a fallible [filter](Fn) to each [`Buffer`]
+    /// descriptor without [detailed](Buffer::Detailed) buffer exclusion using statistics.
+    ///
+    /// ### Guidance
+    ///
+    /// Use [`Exclude::with_min_max`] for filters that **can** assess detailed candidates.
+    ///
+    /// ### Errors
+    ///
+    /// Returns [`Error::Io`] if a compact item cannot be resolved from the memory map.
     fn with_item<I, F>(&self, mask: &mut BitBox, filter: F) -> Result<usize, Error>
     where
         Self::Item: Evaluate<I>,
