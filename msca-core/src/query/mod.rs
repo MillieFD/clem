@@ -41,7 +41,7 @@ use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::TryFromIntError;
-use std::ops::{Not, RangeBounds};
+use std::ops::Not;
 use std::sync::Arc;
 
 use bitvec::boxed::BitBox;
@@ -53,7 +53,7 @@ use xxhash_rust::xxh3::Xxh3Builder;
 use crate::io::{self, Deserialize};
 use crate::manifest::{self, Buffer};
 use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Unfiltered};
-use crate::schema::{BitMatch, Schema, Type, Unfolder, number};
+use crate::schema::{Schema, Type, Unfolder, number};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -351,22 +351,22 @@ where
 ///
 /// ### Implementation
 ///
-/// This adapter holds an [`Operand`] that is used to assess [compact](Buffer::Compact) **and**
-/// [detailed](Buffer::Detailed) buffers. Use [`Filter`] for tests that **do not** support
-/// [detailed](Buffer::Detailed) buffer exclusion using statistics. The operand is also used to
-/// assess deserialized items.
+/// This adapter holds a [`filter::BoundedFilter`] that is used to assess [compact](Buffer::Compact)
+/// **and** [detailed](Buffer::Detailed) buffers. Use [`Filter`] for tests that **do not** support
+/// [detailed](Buffer::Detailed) buffer exclusion using statistics.
 ///
 /// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct BoundedFilter<'q, S, O, I>
+pub struct BoundedFilter<'q, S, F, I>
 where
     S: Source<'q>,
-    O: Operand<I>,
+    F: filter::BoundedFilter<I>,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
-    /// The [`Operand`] used to assess each [`Buffer`] and [deserialized](Deserialize) item.
-    operand: O,
+    /// The [bounded filter](filter::BoundedFilter) used to assess each [`Buffer`] and
+    /// [deserialized](Deserialize) item.
+    filter: F,
     /// Zero-sized **marker** carrying the operand type and [`Query`] lifetime.
     item: PhantomData<&'q I>,
 }
@@ -558,10 +558,10 @@ where
     type Item = S::Item;
 }
 
-impl<'q, S, P, I> Source<'q> for BoundedFilter<'q, S, P, I>
+impl<'q, S, F, I> Source<'q> for BoundedFilter<'q, S, F, I>
 where
     S: Source<'q>,
-    P: Operand<I>,
+    F: filter::BoundedFilter<I>,
 {
     type Item = S::Item;
 }
@@ -612,7 +612,7 @@ where
     type Item = S::Item;
 }
 
-/* --------------------------------------------------------------------- Reduce Trait Definition */
+/* -------------------------------------------------------------------- Resolve Trait Definition */
 
 /// A **[buffer](Buffer) [filter](Filter) chain** that [reduces](Reduce::reduce) the candidate
 /// buffer mask before [resolving](Resolve::resolve) into an item filter [`Iterator`] chain of the
