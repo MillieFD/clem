@@ -522,7 +522,18 @@ where
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    query: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'q Mmap>,
+}
+
+impl<'q, S> Deref for IsNone<'q, S>
+where
+    S: Source<'q>,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
 }
 
 /// A [column](manifest::Column) [adapter](Adapter) that skips the first `n` items.
