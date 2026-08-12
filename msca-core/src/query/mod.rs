@@ -577,6 +577,14 @@ where
     I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
 {
     type Item = I;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.buffers
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        &self.query.mmap
+    }
 }
 
 impl<'q, S, F, I> Source<'q> for Filter<'q, S, F, I>
@@ -585,6 +593,14 @@ where
     F: Fn(&I) -> bool,
 {
     type Item = S::Item;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.source.buffers()
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        self.source.mmap()
+    }
 }
 
 impl<'q, S, F, I> Source<'q> for BoundedFilter<'q, S, F, I>
@@ -593,6 +609,14 @@ where
     F: filter::BoundedFilter<I>,
 {
     type Item = S::Item;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.source.buffers()
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        self.source.mmap()
+    }
 }
 
 impl<'q, S, I> Source<'q> for IsSome<'q, S, I>
@@ -602,6 +626,14 @@ where
     I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
 {
     type Item = I;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.source.buffers()
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        self.source.mmap()
+    }
 }
 
 impl<'q, S> Source<'q> for IsNone<'q, S>
@@ -609,6 +641,14 @@ where
     S: Source<'q>,
 {
     type Item = S::Item;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.source.buffers()
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        self.source.mmap()
+    }
 }
 
 impl<'q, S> Source<'q> for Skip<'q, S>
@@ -616,6 +656,14 @@ where
     S: Adapter<'q>,
 {
     type Item = S::Item;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.source.buffers()
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        self.source.mmap()
+    }
 }
 
 impl<'q, S> Source<'q> for Take<'q, S>
@@ -623,6 +671,14 @@ where
     S: Adapter<'q>,
 {
     type Item = S::Item;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.source.buffers()
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        self.source.mmap()
+    }
 }
 
 impl<'q, S, K> Source<'q> for SemiJoin<'q, S, K>
@@ -631,6 +687,14 @@ where
     K: Adapter<'q>,
 {
     type Item = S::Item;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.source.buffers()
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        self.source.mmap()
+    }
 }
 
 impl<'q, S, K> Source<'q> for AntiJoin<'q, S, K>
@@ -639,6 +703,14 @@ where
     K: Adapter<'q>,
 {
     type Item = S::Item;
+
+    fn buffers(&self) -> &'q BTreeSet<Buffer> {
+        self.source.buffers()
+    }
+
+    fn mmap(&self) -> &'q Mmap {
+        self.source.mmap()
+    }
 }
 
 /* -------------------------------------------------------------------- Resolve Trait Definition */
