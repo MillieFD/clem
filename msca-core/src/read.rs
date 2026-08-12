@@ -280,7 +280,7 @@ pub(crate) trait Resolve<I>: Iterator<Item = Outcome<I>> + Sized {
                     Outcome::Include(item) => return Ok(item).into(),
                     Outcome::Error(error) => return Err(error).into(),
                     Outcome::Exclude(..) => continue, // retry the underlying iterator
-                    Outcome::Absent => continue,      // an absent slot carries no item to yield
+                    Outcome::Absent => continue,
                 }
             }
         })
