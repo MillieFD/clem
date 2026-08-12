@@ -827,7 +827,7 @@ where
 /// [2]: crate::segment::Segment
 pub(crate) trait Exclude<'q>: Source<'q> + Sized {
     /// An [excluder](Exclude) method that applies a fallible [filter](Fn) to each [`Buffer`]
-    /// descriptor without [detailed](Buffer::Detailed) buffer exclusion using statistics.
+    /// descriptor without [detailed](Buffer::Detailed) variant exclusion using statistics.
     ///
     /// ### Guidance
     ///
@@ -835,7 +835,12 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
     ///
     /// ### Errors
     ///
-    /// Returns [`Error::Io`] if a compact item cannot be resolved from the memory map.
+    /// - Returns [`Error::Io`] if a [compact][1] item cannot be read from the [memory map](Mmap).
+    /// - Forwards [`Error::Io`] from the fallible `test` function.
+    ///
+    /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
+    ///
+    /// [1]: Buffer::Compact
     fn with_item<I, F>(&self, mask: &mut BitBox, filter: F) -> Result<usize, Error>
     where
         Self::Item: Evaluate<I>,
@@ -867,7 +872,7 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
     /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
     /// [1]: Buffer::Compact
-    fn with_min_max<I, F, R>(&self, mask: &mut BitBox, f_item: F, f_range: R) -> Result<usize, Error>
+    fn with_min_max<I, F, R>(&self, mask: &mut BitBox, item: F, range: R) -> Result<usize, Error>
     where
         Self::Item: Evaluate<I>,
         I: for<'de> Deserialize<'de, Ok = I> + 'q,
