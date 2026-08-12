@@ -903,57 +903,67 @@ impl<'q, S> Exclude<'q> for S where S: Source<'q> + Sized {}
 
 pub mod mask {
 
+    use std::ops::Deref;
+
     use bitvec::boxed::BitBox;
 
-/// A **[buffer](Buffer) [filter](Filter) chain** that [reduces](Reduce::reduce) the candidate
-/// buffer mask before [resolving](Resolve::resolve) into an item filter [`Iterator`] chain of the
-/// same shape.
-///
-/// ### Lifetime
-///
-/// This trait carries a `'q` lifetime from the parent [`Query`] to ensure no item outlives the file
-/// from which it was [deserialized](Deserialize). This design enables zero-copy reads. [`Clone`]
-/// the item to outlive `'q`.
-///
-/// ### Guidance
-///
-/// Each [`Filter`] is applied in the order of declaration. Filters are lazy and short-circuiting:
-/// Downstream filters **never** assess [buffers](Buffer) and [deserialized](Deserialize) items that
-/// are already excluded by upstream filters. Users are therefore advised to think carefully about
-/// the filter order; declare more restrictive filters early to reduce the result set quickly and
-/// minimise work for subsequent filters.
-///
-/// ### Implementation
-///
-/// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. Each
-/// filter wraps the chain in a lazy [adapter](Adapter) that captures the necessary state to assess
-/// whole buffers. Every adapter is [monomorphized][1] against the concrete item type. No [`IO`](io)
-/// is executed until a terminal method is called e.g. [`read`][2] or [`iter`][3].
-///
-/// Refer to the [source trait documentation](Source) for more details.
-pub trait Reduce<'q> {
-    /// The resolved type returned by [`reduce`](Self::reduce).
-    type Ok;
+    use super::{Error, Src};
+    use crate::io;
 
-    /// Returns a reference to the underlying [`Query`].
-    fn query(&self) -> &'q Query<'q>;
+    /* ---------------------------------------------------------------- Resolve Trait Definition */
 
-    /// Reduce the provided [`Buffer`] mask by [resolving](Resolve::resolve) the [`Adapter`] chain.
+    /// A [buffer][1] [filter][2] chain that reduces the candidate buffer [mask](BitBox) before
+    /// [resolving](Resolve::resolve) into an [item filter chain][3] of the same shape.
+    ///
+    /// ### Lifetime
+    ///
+    /// This trait carries a `'q` lifetime from the parent [`Query`](super::Query) to ensure that no
+    /// item outlives the file from which it was [deserialized](Deserialize). This design enables
+    /// zero-copy reads. [`Clone`] the item to outlive `'q`.
     ///
     /// ### Guidance
     ///
-    /// Each [`Filter`] is applied in the order of declaration. Downstream filters **never** assess
-    /// [buffers](Buffer) that are already excluded by upstream filters. Users are therefore advised
-    /// to think carefully about the filter order; declare more restrictive filters early to reduce
-    /// the result set quickly and minimise work for subsequent filters.
+    /// Each filter is applied in the order of declaration. Filters are lazy and short-circuiting:
+    /// enclosing filters **never** reassess buffers that are already excluded by upstream filters.
+    /// Users are advised to declare more restrictive filters early to reduce the result set quickly
+    /// and minimise work for subsequent filters.
     ///
-    /// ### Errors
+    /// ### Implementation
     ///
-    /// - [`Error::Io`] if a buffer statistic or compact item cannot be resolved.
-    /// - [`Error::Number`] if a recorded item count exceeds [`usize`] on the target platform.
+    /// Every chain begins from a [data source](Src) that borrows the candidate buffer set. Every
+    /// adapter is [monomorphized][4] against the concrete item type. No [`IO`](io) is executed
+    /// until a terminal method is called e.g. [`read`][5] or [`iter`][6].
     ///
-    /// Refer to [`Query::mask`] for more details.
-    fn reduce(self, mask: &mut BitBox) -> Result<Self::Ok, Error>;
+    /// Refer to the [source trait documentation](super::Source) for more details.
+    ///
+    /// [1]: super::Buffer
+    /// [2]: super::Filter
+    /// [3]: super::iter::Adapter
+    /// [4]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
+    /// [5]: super::Adapter::read
+    /// [6]: super::Adapter::iter
+    pub trait Resolve<'q>: Deref<Target = Src<'q>> {
+        /// The [item filter chain](super::iter::Adapter) returned by [`resolve`](Self::resolve).
+        type Ok;
+
+        /// [Excludes](super::Exclude) candidate buffers from the [mask](BitBox) before
+        /// [resolving](Resolve::resolve) into an [item filter chain][3] of the same shape.
+        ///
+        /// ### Guidance
+        ///
+        /// Each [filter](super::Filter) is applied in the order of declaration. Filters are lazy
+        /// and short-circuiting: enclosing filters **never** reassess [buffers](super::Buffer) that
+        /// are already excluded by upstream filters. Users are advised to declare more restrictive
+        /// filters early to reduce the result set quickly and minimise work for subsequent filters.
+        ///
+        /// ### Errors
+        ///
+        /// - [`Error::Io`] if an error occurs during file [`IO`](io) or item deserialization.
+        /// - [`Error::Number`] if a recorded item count exceeds [`usize`].
+        ///
+        /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, Error>;
+    }
 }
 
 /* ----------------------------------------------------------------- Reduce Trait Implementation */
