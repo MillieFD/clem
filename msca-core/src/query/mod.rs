@@ -52,7 +52,7 @@ use xxhash_rust::xxh3::Xxh3Builder;
 
 use crate::io::{self, Deserialize};
 use crate::manifest::{self, Buffer};
-use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Unfiltered};
+use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Resolve, Unfiltered};
 use crate::schema::{Schema, Type, Unfolder, number};
 
 /* ------------------------------------------------------------------------------ Public Exports */
@@ -496,7 +496,8 @@ where
 
 /* --------------------------------------------------------------------- Source Trait Definition */
 
-/// A chain of [adapters](Adapter) that yield the specified [`Item`](Self::Item) type.
+/// A [data source](Src) or [adapter chain](Adapter) over one [`Column`](manifest::Column) that
+/// yields the specified [`Item`](Self::Item) type.
 ///
 /// ### Guidance
 ///
@@ -512,23 +513,28 @@ where
 /// from which it was [deserialized](Deserialize). This design enables zero-copy reads. [`Clone`]
 /// the item to outlive `'q`.
 ///
-/// ##### Before IO
+/// ##### Mask Adapters Before IO
 ///
 /// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. Each
-/// filter wraps the chain in a lazy [adapter](Adapter) that captures the necessary state to assess
-/// whole buffers. Every adapter is [monomorphized][1] against the concrete item type. No [`IO`](io)
-/// is executed until a terminal method is called e.g. [`read`][2] or [`iter`][3].
+/// filter wraps the chain in a lazy adapter that captures the necessary state to assess whole
+/// buffers. Every adapter is [monomorphized][1] against the concrete item type. No [`IO`](io) is
+/// executed until a terminal method is called e.g. [`read`][2] or [`iter`][3].
 ///
-/// ##### During IO
+/// ##### Item Adapters During IO
 ///
-/// The buffer filter chain is [resolved](Resolve::resolve) into an item filter [`Iterator`] chain
-/// of the same shape. The innermost [data source](iter::Src) deserializes items from **only** the
-/// surviving buffers. Downstream adapters test the item and yield an [`Outcome`], immediately
-/// short-circuiting once the item is excluded.
+/// The buffer filter chain is [resolved][4] into an item filter [`Iterator`] chain of the same
+/// shape. The innermost [data source](iter::Src) deserializes items from **only** the surviving
+/// buffers. Enclosing adapters test the item and yield an [`Outcome`], immediately short-circuiting
+/// once the item is [excluded](Outcome::exclude).
+///
+/// This trait is implemented by single-column **mask** and **item** adapters in both phases of the
+/// query lifecycle. This trait is **not** implemented by [combined](Combine) adapters which join
+/// multiple columns.
 ///
 /// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
 /// [2]: Adapter::read
 /// [3]: Adapter::iter
+/// [4]: mask::Resolve::resolve
 pub trait Source<'q>
 where
     <Self::Item as Read>::Src<'q>: Deserialize<'q, Ok = <Self::Item as Read>::Src<'q>>,
