@@ -804,12 +804,64 @@ where
     type Item = S::Item;
 }
 
-    fn buffers(&self) -> &'q BTreeSet<Buffer> {
-        self.source.buffers()
+/* -------------------------------------------------------------------- Exclude Trait Definition */
+
+/// A [`Source`] that tests [buffers](Buffer) against a [filter](Fn) to determine inclusion.
+///
+/// ### Implementation
+///
+/// Buffer inclusion is described using a positional [mask](BitBox) where the `n`th [bit][1]
+/// corresponds to the `n`th buffer from the `n`th data [segment][2].
+///
+/// ```text
+/// buffers   [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
+/// mask        1    0    1    1    0      Mutable owned bitmask.
+///             ▼         ▼    ▼
+/// read        A         C    D           Buffers B and E are never read.
+/// ```
+///
+/// Each [`Filter`] is applied subtractively to reduce the mask. Refer to the [`Src::try_exclude`]
+/// documentation for the underlying iteration method.
+///
+/// [1]: bitvec::ptr::BitPtr
+/// [2]: crate::segment::Segment
+pub(crate) trait Exclude<'q>: Source<'q> + Sized {
+    fn with_item<I, F>(&self, mask: &mut BitBox, filter: F) -> Result<usize, Error>
+    where
+        Self::Item: Evaluate<I>,
+        F: Fn(&I) -> bool,
+    {
+        self.try_exclude(mask, |buf, mmap| {
+            if let Buffer::Compact { .. } = buf {
+                let item = buf.item::<Self::Item>(mmap)?;
+                let kept = item.evaluate(&filter);
+                Ok(kept)
+            } else {
+                Ok(true)
+            }
+        })
     }
 
-    fn mmap(&self) -> &'q Mmap {
-        self.source.mmap()
+    fn with_min_max<I, F, R>(&self, mask: &mut BitBox, f_item: F, f_range: R) -> Result<usize, Error>
+    where
+        Self::Item: Evaluate<I>,
+        I: for<'de> Deserialize<'de, Ok = I> + 'q,
+        F: Fn(&I) -> bool,
+        R: Fn(&I, &I) -> bool,
+    {
+        self.try_exclude(mask, |buf, mmap| {
+            if let Buffer::Detailed { min, max, .. } = buf {
+                let min: I = min.slice(mmap)?.deserialize_into()?;
+                let max: I = max.slice(mmap)?.deserialize_into()?;
+                let keep = f_range(&min, &max);
+                Ok(keep)
+            } else if let Buffer::Compact { .. } = buf {
+                let keep = buf.item::<Self::Item>(mmap)?.evaluate(&f_item);
+                Ok(keep)
+            } else {
+                Ok(true)
+            }
+        })
     }
 }
 
