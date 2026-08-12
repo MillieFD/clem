@@ -895,7 +895,11 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
     }
 }
 
-/* -------------------------------------------------------------------- Resolve Trait Definition */
+/* ---------------------------------------------------------------- Exclude Trait Implementation */
+
+impl<'q, S> Exclude<'q> for S where S: Source<'q> + Sized {}
+
+/* ------------------------------------------------------------------------ Buffer Filter Module */
 
 /// A **[buffer](Buffer) [filter](Filter) chain** that [reduces](Reduce::reduce) the candidate
 /// buffer mask before [resolving](Resolve::resolve) into an item filter [`Iterator`] chain of the
