@@ -901,6 +901,10 @@ impl<'q, S> Exclude<'q> for S where S: Source<'q> + Sized {}
 
 /* ------------------------------------------------------------------------ Buffer Filter Module */
 
+pub mod mask {
+
+    use bitvec::boxed::BitBox;
+
 /// A **[buffer](Buffer) [filter](Filter) chain** that [reduces](Reduce::reduce) the candidate
 /// buffer mask before [resolving](Resolve::resolve) into an item filter [`Iterator`] chain of the
 /// same shape.
