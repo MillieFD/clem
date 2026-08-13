@@ -1024,13 +1024,13 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
             if let Buffer::Detailed { min, max, .. } = buf {
                 let min: I = min.slice(mmap)?.deserialize_into()?;
                 let max: I = max.slice(mmap)?.deserialize_into()?;
-                let keep = f_range(&min, &max);
-                Ok(keep)
+                let kept = f1(&min, &max);
+                Ok(kept)
             } else if let Buffer::Compact { .. } = buf {
-                let keep = buf.item::<Self::Item>(mmap)?.evaluate(&f_item);
-                Ok(keep)
+                let kept = buf.item::<Self::Item>(mmap)?.evaluate(&f0);
+                Ok(kept)
             } else {
-                Ok(true)
+                Ok(true) // retain Buffer::Basic
             }
         })
     }
