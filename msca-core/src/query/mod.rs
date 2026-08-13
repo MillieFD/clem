@@ -41,7 +41,7 @@ use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::TryFromIntError;
-use std::ops::{Deref, Not};
+use std::ops::{Deref, RangeBounds};
 use std::sync::Arc;
 
 use bitvec::boxed::BitBox;
@@ -50,10 +50,10 @@ use funty::Unsigned;
 use memmap2::Mmap;
 use xxhash_rust::xxh3::Xxh3Builder;
 
-use crate::io::{self, Deserialize};
+use crate::io::{self, Deserialize, Deserializer};
 use crate::manifest::{self, Buffer};
 use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Resolve, Unfiltered};
-use crate::schema::{Schema, Type, Unfolder, number};
+use crate::schema::{self, Schema, Type, Unfolder, number};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -160,35 +160,6 @@ impl<'m> Query<'m> {
         } else {
             Error::Column { name: name.into() }.into()
         }
-    }
-
-    /// Returns a new [mask](BitBox) that includes every available [`Buffer`] from the [`BTreeSet`].
-    ///
-    /// `Buffer` inclusion is determined using a positional mask where the `n`th bit corresponds
-    /// to the `n`th buffer from the `n`th data segment.
-    ///
-    /// ```text
-    /// buffers   [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
-    /// mask        1    0    1    1    0      Mutable owned bitmask.
-    ///             ▼         ▼    ▼
-    /// read        A         C    D           Buffers B and E are never read.
-    /// ```
-    ///
-    /// [Filters](Filter) are applied subtractively to reduce the mask.
-    pub fn mask(&self) -> BitBox {
-        let n = self.size();
-        BitVec::repeat(true, n).into_boxed_bitslice()
-    }
-
-    /// Returns the number of data segments for the queried [`Schema`].
-    ///
-    /// Each column is written exactly once per segment. All columns are therefore guaranteed to
-    /// contain the same number of buffers.
-    ///
-    /// See [`Query::count`] for the total number of **logical** items across all segments.
-    pub fn size(&self) -> usize {
-        // NOTE: copied fn dereferences &&Column → &Column (no runtime cost).
-        self.columns.values().next().copied().map(manifest::Column::size).unwrap_or_default()
     }
 
     /// Returns the `n`th item of the query.
