@@ -722,6 +722,18 @@ pub struct Adjunct<A, B> {
     pub b: B,
 }
 
+impl<A, B> Deref for Adjunct<A, B>
+where
+    A: Deref,
+{
+    type Target = A::Target;
+
+    fn deref(&self) -> &A::Target {
+        // NOTE: a and b must originate from the same Query; equality check at construction
+        &self.a
+    }
+}
+
 /// A [column][1] [adapter](Adapter) retaining only items from `S` that are also present in `K`.
 ///
 /// [1]: manifest::Column
