@@ -392,7 +392,7 @@ impl<'q, I> Deref for Column<'q, I> {
 /// [compact](Buffer::Compact) buffer and [deserialized](Deserialize) item. This adapter cannot
 /// use buffer statistics to exclude [detailed](Buffer::Detailed) candidates.
 ///
-/// Use [`BoundedFilter`] for filters that **can** assess [detailed](Buffer::Detailed) candidates.
+/// Use a named adapter e.g. [`Range`] for filters that **can** assess detailed candidates.
 ///
 /// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -406,8 +406,8 @@ where
     source: S,
     /// The [`filter`](filter::Filter::filter) used to assess each [deserialized](Deserialize) item.
     filter: F,
-    /// Zero-sized **marker** carrying the operand type and [`Query`] lifetime.
-    item: PhantomData<&'q I>,
+    /// Zero-sized **marker** carrying the item type and [`Query`] lifetime.
+    phantom: PhantomData<&'q I>,
 }
 
 impl<'q, S, F, I> Deref for Filter<'q, S, F, I>
@@ -422,18 +422,56 @@ where
     }
 }
 
-/// A [column][1] [adapter](Adapter) that applies a [Filter] to each [deserialized](Deserialize)
-/// item **with** [detailed](Buffer::Detailed) buffer exclusion using statistics.
+/// A [column][1] [adapter](Adapter) that retains **only** items within the specified [range][2].
 ///
-/// ### Implementation
-///
-/// This adapter holds a [`filter::BoundedFilter`] that is used to assess [compact](Buffer::Compact)
-/// **and** [detailed](Buffer::Detailed) buffers. Use [`Filter`] for tests that **do not** support
-/// [detailed](Buffer::Detailed) buffer exclusion using statistics.
+/// [1]: manifest::Column
+/// [2]: RangeBounds
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct Range<'q, S, B, I>
+where
+    S: Source<'q>,
+    B: RangeBounds<I>,
+{
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    source: S,
+    /// The [range](RangeBounds) of items to retain.
+    bounds: B,
+    /// Zero-sized **marker** carrying the item type and [`Query`] lifetime.
+    phantom: PhantomData<&'q I>,
+}
+
+impl<'q, S, B, I> Deref for Range<'q, S, B, I>
+where
+    S: Source<'q>,
+    B: RangeBounds<I>,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
+}
+
+/// A [column][1] [adapter](Adapter) that retains **only** items [matching](BitMatch) one target.
 ///
 /// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct BoundedFilter<'q, S, F, I>
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct BitMatch<'q, S, I>
+where
+    S: Source<'q>,
+    I: schema::BitMatch,
+{
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    source: S,
+    /// The target against which each [deserialized](Deserialize) item is [assessed](BitMatch).
+    item: I,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    phantom: PhantomData<&'q Mmap>,
+}
+
+impl<'q, S, I> Deref for BitMatch<'q, S, I>
 where
     S: Source<'q>,
     F: filter::BoundedFilter<I>,
@@ -447,10 +485,75 @@ where
     item: PhantomData<&'q I>,
 }
 
-impl<'q, S, F, I> Deref for BoundedFilter<'q, S, F, I>
+impl<'q, S, I> Deref for OneOf<'q, S, I>
 where
     S: Source<'q>,
-    F: filter::BoundedFilter<I>,
+    I: schema::BitMatch,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
+}
+
+/// A [column](manifest::Column) [adapter](Adapter) that retains **only** items [matching](BitMatch)
+/// at least one candidate from an ordered [collection](std::collections).
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct OneOfSorted<'q, S, I>
+where
+    S: Source<'q>,
+    I: Ord,
+{
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    source: S,
+    /// Immutable [slice][1] over the **sorted** candidate item [collection](std::collections) in
+    /// **ascending order**.
+    ///
+    /// [1]: https://doc.rust-lang.org/book/ch04-03-slices.html
+    items: Box<[I]>,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    phantom: PhantomData<&'q Mmap>,
+}
+
+impl<'q, S, I> Deref for OneOfSorted<'q, S, I>
+where
+    S: Source<'q>,
+    I: Ord,
+{
+    type Target = Src<'q>;
+
+    fn deref(&self) -> &Src<'q> {
+        &self.source
+    }
+}
+
+/// A [column](manifest::Column) [adapter](Adapter) that retains **only** items [present](BitMatch)
+/// in the specified [hashed](std::hash::Hasher) candidate [set](HashSet).
+///
+/// [1]: manifest::Column
+#[derive(Clone, Debug)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct OneOfSet<'q, S, I>
+where
+    S: Source<'q>,
+    I: Eq + Hash,
+{
+    /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
+    source: S,
+    /// The [hashed][1] candidate [set](HashSet) probed for each [deserialized](Deserialize) item.
+    ///
+    /// [1]: std::hash::Hasher
+    items: HashSet<I, Xxh3Builder>,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    phantom: PhantomData<&'q Mmap>,
+}
+
+impl<'q, S, I> Deref for OneOfSet<'q, S, I>
+where
+    S: Source<'q>,
+    I: Eq + Hash,
 {
     type Target = Src<'q>;
 
@@ -469,7 +572,7 @@ where
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
     /// Zero-sized **marker** carrying the flattened [`Some`] type and [`Query`] lifetime.
-    item: PhantomData<&'q I>,
+    phantom: PhantomData<&'q I>,
 }
 
 impl<'q, S, I> Deref for IsSome<'q, S, I>
