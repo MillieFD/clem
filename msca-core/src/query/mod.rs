@@ -1013,21 +1013,21 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
     /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
     /// [1]: Buffer::Compact
-    fn with_min_max<I, F, R>(&self, mask: &mut BitBox, f0: F, f1: R) -> Result<usize, io::Error>
+    fn with_min_max<I, F, O>(&self, mask: &mut BitBox, filter: F, op: O) -> Result<usize, io::Error>
     where
         Self::Item: Evaluate<I>,
         I: for<'de> Deserialize<'de, Ok = I> + 'q,
         F: Fn(&I) -> bool,
-        R: Fn(&I, &I) -> bool,
+        O: Fn(&I, &I) -> bool,
     {
         self.try_exclude(mask, |buf, mmap| {
             if let Buffer::Detailed { min, max, .. } = buf {
                 let min: I = min.slice(mmap)?.deserialize_into()?;
                 let max: I = max.slice(mmap)?.deserialize_into()?;
-                let kept = f1(&min, &max);
+                let kept = op(&min, &max);
                 Ok(kept)
             } else if let Buffer::Compact { .. } = buf {
-                let kept = buf.item::<Self::Item>(mmap)?.evaluate(&f0);
+                let kept = buf.item::<Self::Item>(mmap)?.evaluate(&filter);
                 Ok(kept)
             } else {
                 Ok(true) // retain Buffer::Basic
@@ -1044,23 +1044,25 @@ impl<'q, S> Exclude<'q> for S where S: Source<'q> + Sized {}
 
 pub mod mask {
 
-    use std::ops::Deref;
+    use std::marker::PhantomData;
+    use std::ops::{Deref, Not};
 
     use bitvec::boxed::BitBox;
 
-    use super::{Error, Src};
-    use crate::io;
+    use super::*;
+    use crate::io::Deserialize;
+    use crate::read::{Evaluate, IsOption, Read, Reader};
 
     /* ---------------------------------------------------------------- Resolve Trait Definition */
 
-    /// A [buffer][1] [filter][2] chain that reduces the candidate buffer [mask](BitBox) before
-    /// [resolving](Resolve::resolve) into an [item filter chain][3] of the same shape.
+    /// A [buffer](Buffer) [filter](Filter) chain that reduces the candidate buffer [mask](BitBox)
+    /// before [resolving](Resolve::resolve) into an [item filter chain][1] of the same shape.
     ///
     /// ### Lifetime
     ///
-    /// This trait carries a `'q` lifetime from the parent [`Query`](super::Query) to ensure that no
-    /// item outlives the file from which it was [deserialized](Deserialize). This design enables
-    /// zero-copy reads. [`Clone`] the item to outlive `'q`.
+    /// This trait carries a `'q` lifetime from the parent [`Query`] to ensure that no item outlives
+    /// the file from which it was [deserialized](Deserialize). This design enables zero-copy reads.
+    /// [`Clone`] the item to outlive `'q`.
     ///
     /// ### Guidance
     ///
@@ -1072,108 +1074,236 @@ pub mod mask {
     /// ### Implementation
     ///
     /// Every chain begins from a [data source](Src) that borrows the candidate buffer set. Every
-    /// adapter is [monomorphized][4] against the concrete item type. No [`IO`](io) is executed
-    /// until a terminal method is called e.g. [`read`][5] or [`iter`][6].
+    /// adapter is [monomorphized][2] against the concrete item type. No [`IO`](io) is executed
+    /// until a terminal method is called e.g. [`read`](Adapter::read) or [`iter`](Adapter::iter).
     ///
-    /// Refer to the [source trait documentation](super::Source) for more details.
+    /// Refer to the [source trait documentation](Source) for more details.
     ///
-    /// [1]: super::Buffer
-    /// [2]: super::Filter
-    /// [3]: super::iter::Adapter
-    /// [4]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
-    /// [5]: super::Adapter::read
-    /// [6]: super::Adapter::iter
+    /// [1]: iter::Adapter
+    /// [2]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
     pub trait Resolve<'q>: Deref<Target = Src<'q>> {
-        /// The [item filter chain](super::iter::Adapter) returned by [`resolve`](Self::resolve).
+        /// The [item filter chain](iter::Adapter) returned by [`resolve`](Resolve::resolve).
         type Ok;
 
-        /// [Excludes](super::Exclude) candidate buffers from the [mask](BitBox) before
+        /// [Excludes](Exclude) candidate buffers from the [mask](BitBox) before
         /// [resolving](Resolve::resolve) into an [item filter chain][3] of the same shape.
         ///
         /// ### Guidance
         ///
-        /// Each [filter](super::Filter) is applied in the order of declaration. Filters are lazy
-        /// and short-circuiting: enclosing filters **never** reassess [buffers](super::Buffer) that
-        /// are already excluded by upstream filters. Users are advised to declare more restrictive
+        /// Each [`Filter`] is applied in the order of declaration. Filters are lazy and
+        /// short-circuiting: enclosing filters **never** reassess [buffers](Buffer) that are
+        /// already excluded by upstream filters. Users are advised to declare more restrictive
         /// filters early to reduce the result set quickly and minimise work for subsequent filters.
         ///
         /// ### Errors
         ///
-        /// - [`Error::Io`] if an error occurs during file [`IO`](io) or item deserialization.
-        /// - [`Error::Number`] if a recorded item count exceeds [`usize`].
+        /// - [`io::Error`] if an error occurs during file [`IO`](io) or item deserialization.
+        /// - [`io::Error::Number`] if a recorded item count exceeds [`usize`].
         ///
         /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
-        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, Error>;
-    }
-}
-
-/* ----------------------------------------------------------------- Reduce Trait Implementation */
-
-impl<'q, I> Reduce<'q> for Src<'q, I>
-where
-    I: Read + Clone + 'q,
-    I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
-{
-    type Ok = Self;
-
-    fn query(&self) -> &'q Query<'q> {
-        self.query
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error>;
     }
 
-    /// [`Src`] is not a [`Filter`]; the `mask` is unaltered by definition.
-    #[allow(unused_variables, reason = "query::Src includes all buffers")]
-    fn reduce(self, mask: &mut BitBox) -> Result<Self, Error> {
-        Ok(self)
-    }
-}
+    /* ------------------------------------------------------------ Resolve Trait Implementation */
 
-
-        fn retain<B, G, I>(&mut self, bounds: &[B], test: &G) -> Result<&mut Self, Error>
-        where
-            S::Item: Evaluate<I>,
-            B: RangeBounds<I>,
-            G: Fn(&I) -> bool,
-            I: for<'de> Deserialize<'de, Ok = I> + PartialOrd,
-        {
-            self.source.retain(bounds, test)?;
-            Ok(self)
-        }
-    }
-
-    impl<S> Adapter for Skip<S>
+    impl<'q, I> Resolve<'q> for Column<'q, I>
     where
-        S: Adapter,
+        I: Read + Clone + 'q,
+        I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
     {
-        type Item = S::Item;
+        type Ok = Self;
 
-        fn root<'a>(&'a self) -> &'a Root<'a, S::Item> {
-            self.inner.root()
-        }
-
-        fn buffers(&mut self) -> &mut Vec<Buffer> {
-            self.inner.buffers()
-        }
-
-        fn stream(&self) -> Result<impl Iterator<Item = Outcome<S::Item>>, Error> {
-        }
-
-        fn count(&self) -> u64 {
-            self.inner.count().saturating_sub(self.skip)
-        }
-
-        fn retain<B, G, I>(&mut self, bounds: &[B], test: &G) -> Result<&mut Self, Error>
-        where
-            S::Item: Evaluate<I>,
-            B: RangeBounds<I>,
-            G: Fn(&I) -> bool,
-            I: for<'de> Deserialize<'de, Ok = I> + PartialOrd,
-        {
-            self.inner.retain(bounds, test)?;
+        /// [`Src`] is not a [`Filter`]; the `mask` is unaltered by definition.
+        ///
+        /// Read the [trait method documentation](Resolve::resolve) for more details.
+        #[allow(unused_variables, reason = "query::Src includes all buffers")]
+        fn resolve(self, mask: &mut BitBox) -> Result<Self, io::Error> {
             Ok(self)
         }
     }
 
-    impl<S> Adapter for Take<S>
+    impl<'q, S, F, I> Resolve<'q> for Filter<'q, S, F, I>
+    where
+        S: Adapter<'q>,
+        S::Item: Evaluate<I>,
+        F: Fn(&I) -> bool + 'q,
+        I: 'q,
+    {
+        type Ok = Filter<'q, S::Ok, F, I>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let Filter { source, filter, phantom } = self;
+            let source = source.resolve(mask)?;
+            source.with_item(mask, &filter)?;
+            Ok(Filter { source, filter, phantom })
+        }
+    }
+
+    impl<'q, S, B, I> Resolve<'q> for Range<'q, S, B, I>
+    where
+        S: Adapter<'q>,
+        S::Item: Evaluate<I>,
+        B: RangeBounds<I> + 'q,
+        I: for<'de> Deserialize<'de, Ok = I> + PartialOrd + 'q,
+    {
+        type Ok = Range<'q, S::Ok, B, I>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let Range { source, bounds, phantom } = self;
+            let source = source.resolve(mask)?;
+            source.with_min_max(
+                mask,
+                |item| bounds.contains(item),
+                |lb, ub| Buffer::disjoint(lb, ub, &bounds).not(),
+            )?;
+            Ok(Range { source, bounds, phantom })
+        }
+    }
+
+    impl<'q, S, I> Resolve<'q> for BitMatch<'q, S, I>
+    where
+        S: Adapter<'q>,
+        S::Item: Evaluate<I>,
+        I: for<'de> Deserialize<'de, Ok = I> + schema::BitMatch + PartialOrd + 'q,
+    {
+        type Ok = BitMatch<'q, S::Ok, I>;
+
+        /// A buffer whose recorded span excludes the candidate can hold no match.
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let BitMatch { source, item, phantom } = self;
+            let source = source.resolve(mask)?;
+            source.with_min_max(
+                mask,
+                |i| schema::BitMatch::eq(&item, i),
+                |lb, ub| lb <= &item && &item <= ub,
+            )?;
+            Ok(BitMatch { source, item, phantom })
+        }
+    }
+
+    impl<'q, S, I> Resolve<'q> for OneOf<'q, S, I>
+    where
+        S: Adapter<'q>,
+        S::Item: Evaluate<I>,
+        I: for<'de> Deserialize<'de, Ok = I> + schema::BitMatch + PartialOrd + 'q,
+    {
+        type Ok = OneOf<'q, S::Ok, I>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let OneOf { source, items, phantom } = self;
+            let source = source.resolve(mask)?;
+            source.with_min_max(
+                mask,
+                |item| items.iter().any(|i| schema::BitMatch::eq(item, i)),
+                |lb, ub| items.iter().any(|i| lb <= i && i <= ub),
+            )?;
+            Ok(OneOf { source, items, phantom })
+        }
+    }
+
+    impl<'q, S, I> Resolve<'q> for OneOfSorted<'q, S, I>
+    where
+        S: Adapter<'q>,
+        S::Item: Evaluate<I>,
+        I: for<'de> Deserialize<'de, Ok = I> + Ord + 'q,
+    {
+        type Ok = OneOfSorted<'q, S::Ok, I>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let OneOfSorted { source, items, phantom } = self;
+            let source = source.resolve(mask)?;
+            source.with_min_max(
+                mask,
+                |item| items.binary_search(item).is_ok(),
+                |lb, ub| items.partition_point(|i| i < lb) < items.partition_point(|i| i <= ub),
+            )?;
+            Ok(OneOfSorted { source, items, phantom })
+        }
+    }
+
+    impl<'q, S, I> Resolve<'q> for OneOfSet<'q, S, I>
+    where
+        S: Adapter<'q>,
+        S::Item: Evaluate<I>,
+        I: for<'de> Deserialize<'de, Ok = I> + Eq + Hash + PartialOrd + 'q,
+    {
+        type Ok = OneOfSet<'q, S::Ok, I>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let OneOfSet { source, items, phantom } = self;
+            let source = source.resolve(mask)?;
+            source.with_min_max(
+                mask,
+                |item| items.contains(item),
+                |lb, ub| items.iter().any(|i| lb <= i && i <= ub),
+            )?;
+            Ok(OneOfSet { source, items, phantom })
+        }
+    }
+    impl<'q, S, K> Resolve<'q> for SemiJoin<'q, S, K>
+    where
+        S: Adapter<'q>,
+        S::Item: Evaluate<K::Item>,
+        K: Adapter<'q>,
+        K::Item: for<'de> Deserialize<'de, Ok = K::Item> + Ord,
+    {
+        type Ok = iter::SemiJoin<S::Ok, K::Item>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let keys = self.keys.into_btree_set()?;
+            let source = self.source.resolve(mask)?;
+            source.with_min_max(
+                mask,
+                |i| keys.contains(i),
+                |lb, ub| keys.range(lb..=ub).next().is_some(),
+            )?;
+            Ok(iter::SemiJoin { source, keys })
+        }
+    }
+
+    impl<'q, S, K> Resolve<'q> for AntiJoin<'q, S, K>
+    where
+        S: Adapter<'q>,
+        S::Item: Evaluate<K::Item>,
+        K: Adapter<'q>,
+        K::Item: Ord,
+    {
+        type Ok = iter::AntiJoin<S::Ok, K::Item>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let keys = self.keys.into_btree_set()?;
+            let source = self.source.resolve(mask)?;
+            let f = |op: &K::Item| keys.contains(op).not();
+            source.with_item(mask, f)?;
+            Ok(iter::AntiJoin { source, keys })
+        }
+    }
+
+    impl<'q, S, I> Resolve<'q> for IsSome<'q, S, I>
+    where
+        S: Adapter<'q>,
+        S::Item: IsOption<Item = I> + Evaluate<S::Item>,
+        I: Read,
+    {
+        type Ok = IsSome<'q, S::Ok, I>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let source = self.source.resolve(mask)?;
+            source.with_item(mask, S::Item::is_some)?;
+            Ok(IsSome { source, phantom: PhantomData })
+        }
+    }
+
+    impl<'q, S> Resolve<'q> for IsNone<'q, S>
+        S::Item: IsOption + Evaluate<S::Item>,
+        type Ok = IsNone<'q, S::Ok>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let source = self.source.resolve(mask)?;
+            source.with_item(mask, S::Item::is_none)?;
+            Ok(IsNone { source, phantom: PhantomData })
+        }
+    }
     where
         S: Adapter,
     {
