@@ -700,6 +700,18 @@ pub struct Disjunct<A, B> {
     pub b: B,
 }
 
+impl<A, B> Deref for Disjunct<A, B>
+where
+    A: Deref,
+{
+    type Target = A::Target;
+
+    fn deref(&self) -> &A::Target {
+        // NOTE: a and b must originate from the same Query; equality check at construction
+        &self.a
+    }
+}
+
 /// A symmetric difference `△` **node** returning items from `A` [`xor`](Join::xor) `B`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[non_exhaustive] // reject external struct literal construction
