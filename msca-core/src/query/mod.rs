@@ -1295,7 +1295,10 @@ pub mod mask {
     }
 
     impl<'q, S> Resolve<'q> for IsNone<'q, S>
+    where
+        S: Adapter<'q>,
         S::Item: IsOption + Evaluate<S::Item>,
+    {
         type Ok = IsNone<'q, S::Ok>;
 
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
@@ -1304,6 +1307,36 @@ pub mod mask {
             Ok(IsNone { source, phantom: PhantomData })
         }
     }
+
+    impl<'q, A, B> Resolve<'q> for Conjunct<A, B>
+    where
+        A: Resolve<'q>,
+        B: Resolve<'q>,
+    {
+        type Ok = Conjunct<A::Ok, B::Ok>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let a = self.a.resolve(mask)?;
+            let b = self.b.resolve(mask)?;
+            Ok(Conjunct { a, b })
+        }
+    }
+
+    impl<'q, A, B> Resolve<'q> for Adjunct<A, B>
+    where
+        A: Resolve<'q>,
+        B: Resolve<'q>,
+    {
+        type Ok = Adjunct<A::Ok, B::Ok>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let Adjunct { a, b } = self;
+            let united = Disjunct { a, b }.resolve(mask)?;
+            Ok(Adjunct { a: united.a, b: united.b })
+        }
+    }
+}
+
     where
         S: Adapter,
     {
