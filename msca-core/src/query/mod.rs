@@ -1308,6 +1308,75 @@ pub mod mask {
         }
     }
 
+    impl<'q, S> Resolve<'q> for Skip<'q, S>
+    where
+        S: Adapter<'q>,
+    {
+        type Ok = iter::Skip<S::Ok>;
+
+        fn resolve(mut self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let source = self.source.resolve(mask)?;
+            let (buffer, origin) = mask
+                .iter_mut()
+                .zip(source.buffers)
+                .enumerate()
+                .find_map(|b| {
+                    if *b.1.0 {
+                        if let Some(n) = match b.1.1.count().try_into().map_err(io::Error::from) {
+                            Ok(c) => self.skip.checked_sub(c),
+                            Err(e) => return Err(e).into(),
+                        } {
+                            self.skip = n;
+                            b.1.0.commit(false);
+                        } else {
+                            let out = (b.0, self.skip);
+                            return Ok(out).into();
+                        }
+                    };
+                    None
+                })
+                .transpose()?
+                .unwrap_or((mask.len(), self.skip));
+            Ok(iter::Skip { source, buffer, origin })
+        }
+    }
+
+    impl<'q, S> Resolve<'q> for Take<'q, S>
+    where
+        S: Adapter<'q>,
+    {
+        type Ok = iter::Take<S::Ok>;
+
+        fn resolve(mut self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let source = self.source.resolve(mask)?;
+            let origin = iter::Adapter::origin(&source, mask);
+            self.take = self.take.saturating_add(origin);
+            let (limit, keep) = mask
+                .iter_mut()
+                .zip(source.buffers)
+                .enumerate()
+                .find_map(|b| {
+                    if *b.1.0 {
+                        if let Some(n) = match b.1.1.count().try_into().map_err(io::Error::from) {
+                            Ok(c) if c > 0 => self.take.checked_sub(c).filter(|sub| *sub > 0),
+                            Err(e) => return Err(e).into(),
+                            other => self.take.into(),
+                        } {
+                            self.take = n;
+                            b.1.0.commit(false);
+                        } else {
+                            let out = (b.0, self.take);
+                            return Ok(out).into();
+                        }
+                    }
+                    None
+                })
+                .transpose()?
+                .unwrap_or((mask.len(), self.take));
+            Ok(iter::Take { source, limit, keep })
+        }
+    }
+
     impl<'q, A, B> Resolve<'q> for Conjunct<A, B>
     where
         A: Resolve<'q>,
