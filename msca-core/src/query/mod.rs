@@ -1391,6 +1391,23 @@ pub mod mask {
         }
     }
 
+    impl<'q, A, B> Resolve<'q> for Disjunct<A, B>
+    where
+        A: Resolve<'q>,
+        B: Resolve<'q>,
+    {
+        type Ok = Disjunct<A::Ok, B::Ok>;
+
+        fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
+            let mut other = mask.clone();
+            let a = self.a.resolve(&mut other)?;
+            **mask ^= &*other;
+            let b = self.b.resolve(mask)?;
+            **mask |= &*other;
+            Ok(Disjunct { a, b })
+        }
+    }
+
     impl<'q, A, B> Resolve<'q> for Adjunct<A, B>
     where
         A: Resolve<'q>,
