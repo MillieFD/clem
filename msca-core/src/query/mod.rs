@@ -1013,7 +1013,7 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
     /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
     /// [1]: Buffer::Compact
-    fn with_min_max<I, F, R>(&self, mask: &mut BitBox, item: F, range: R) -> Result<usize, Error>
+    fn with_min_max<I, F, R>(&self, mask: &mut BitBox, f0: F, f1: R) -> Result<usize, io::Error>
     where
         Self::Item: Evaluate<I>,
         I: for<'de> Deserialize<'de, Ok = I> + 'q,
