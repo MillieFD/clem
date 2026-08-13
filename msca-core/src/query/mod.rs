@@ -335,7 +335,7 @@ impl<'q> Src<'q> {
     /// ### Errors
     ///
     /// Forwards [`Error::Io`] from the fallible `test` function.
-    pub(crate) fn try_exclude<F>(&self, mask: &mut BitBox, mut test: F) -> Result<usize, Error>
+    pub(crate) fn try_exclude<F>(&self, mask: &mut BitBox, mut test: F) -> Result<usize, io::Error>
     where
         F: FnMut(&Buffer, &'q Mmap) -> Result<bool, io::Error>,
     {
