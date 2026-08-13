@@ -678,6 +678,18 @@ pub struct Conjunct<A, B> {
     pub b: B,
 }
 
+impl<A, B> Deref for Conjunct<A, B>
+where
+    A: Deref,
+{
+    type Target = A::Target;
+
+    fn deref(&self) -> &A::Target {
+        // NOTE: a and b must originate from the same Query; equality check at construction
+        &self.a
+    }
+}
+
 /// A set union `∪` **node** returning items from `A` [`or`](Join::or) `B`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 #[non_exhaustive] // reject external struct literal construction
