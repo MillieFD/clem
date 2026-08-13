@@ -860,14 +860,45 @@ where
     type Item = S::Item;
 }
 
-impl<'q, S, F, I> Source<'q> for BoundedFilter<'q, S, F, I>
+impl<'q, S, B, I> Source<'q> for Range<'q, S, B, I>
 where
     S: Source<'q>,
-    F: filter::BoundedFilter<I>,
+    B: RangeBounds<I>,
 {
     type Item = S::Item;
 }
 
+impl<'q, S, I> Source<'q> for BitMatch<'q, S, I>
+where
+    S: Source<'q>,
+    I: schema::BitMatch,
+{
+    type Item = S::Item;
+}
+
+impl<'q, S, I> Source<'q> for OneOf<'q, S, I>
+where
+    S: Source<'q>,
+    I: schema::BitMatch,
+{
+    type Item = S::Item;
+}
+
+impl<'q, S, I> Source<'q> for OneOfSorted<'q, S, I>
+where
+    S: Source<'q>,
+    I: Ord,
+{
+    type Item = S::Item;
+}
+
+impl<'q, S, I> Source<'q> for OneOfSet<'q, S, I>
+where
+    S: Source<'q>,
+    I: Eq + Hash,
+{
+    type Item = S::Item;
+}
 impl<'q, S, I> Source<'q> for IsSome<'q, S, I>
 where
     S: Source<'q>,
