@@ -982,7 +982,7 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
     /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
     /// [1]: Buffer::Compact
-    fn with_item<I, F>(&self, mask: &mut BitBox, filter: F) -> Result<usize, Error>
+    fn with_item<I, F>(&self, mask: &mut BitBox, filter: F) -> Result<usize, io::Error>
     where
         Self::Item: Evaluate<I>,
         F: Fn(&I) -> bool,
