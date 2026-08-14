@@ -79,23 +79,23 @@ use crate::schema::number;
 /// A **stateful cursor** over paired validity and value sub-buffers for a single [`Column`]; used
 /// to [`Deserialize`] optional non-niche items.
 #[doc(hidden)] // Reachable via Read::Src for optional non-niche readers
-pub struct OptBitVec<'a, I>
+pub struct OptBitVec<'d, I>
 where
-    I: Read,
+    I: Read<'d>,
 {
     /// Byte [slice][1] over the validity sub-buffer where `true` → [`Some`] and `false` → [`None`].
     ///
     /// [1]: https://doc.rust-lang.org/std/primitive.slice.html
-    mask: &'a BitSlice<u8, Lsb0>,
+    mask: &'d BitSlice<u8, Lsb0>,
     /// A **stateful reader** over the concatenated data sub-buffer from which [`Some`] items are
     /// [deserialized](Deserialize).
-    data: I::Src<'a>,
+    data: I::Src,
 }
 
 impl<'de, I> Deserialize<'de> for OptBitVec<'de, I>
 where
-    I: Read,
-    I::Src<'de>: Deserialize<'de, Ok = I::Src<'de>> + Default,
+    I: Read<'de>,
+    I::Src: Default,
 {
     type Ok = Self;
 
