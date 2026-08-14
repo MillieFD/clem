@@ -829,36 +829,6 @@ where
     type Item = S::Item;
 }
 
-impl<'d, S> Source<'d> for Skip<'d, S>
-where
-    S: Adapter<'d>,
-{
-    type Item = S::Item;
-}
-
-impl<'d, S> Source<'d> for Take<'d, S>
-where
-    S: Adapter<'d>,
-{
-    type Item = S::Item;
-}
-
-impl<'d, S, K> Source<'d> for SemiJoin<'d, S, K>
-where
-    S: Adapter<'d>,
-    K: Adapter<'d>,
-{
-    type Item = S::Item;
-}
-
-impl<'d, S, K> Source<'d> for AntiJoin<'d, S, K>
-where
-    S: Adapter<'d>,
-    K: Adapter<'d>,
-{
-    type Item = S::Item;
-}
-
 /* -------------------------------------------------------------------- Exclude Trait Definition */
 
 /// A [`Source`] that tests [buffers](Buffer) against a [filter](Fn) to determine inclusion.
