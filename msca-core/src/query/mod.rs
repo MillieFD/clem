@@ -873,9 +873,8 @@ pub(crate) trait Exclude<'d>: Source<'d> + Sized {
     {
         self.try_exclude(mask, |buf, mmap| {
             if let Buffer::Compact { .. } = buf {
-                let item = buf.item::<Self::Item>(mmap)?;
-                let kept = item.evaluate(&filter);
-                Ok(kept)
+                let keep = buf.item::<Self::Item>(mmap)?.evaluate(&filter);
+                Ok(keep)
             } else {
                 Ok(true)
             }
@@ -908,11 +907,11 @@ pub(crate) trait Exclude<'d>: Source<'d> + Sized {
             if let Buffer::Detailed { min, max, .. } = buf {
                 let min: I = min.slice(mmap)?.deserialize_into()?;
                 let max: I = max.slice(mmap)?.deserialize_into()?;
-                let kept = op(&min, &max);
-                Ok(kept)
+                let keep = op(&min, &max);
+                Ok(keep)
             } else if let Buffer::Compact { .. } = buf {
-                let kept = buf.item::<Self::Item>(mmap)?.evaluate(&filter);
-                Ok(kept)
+                let keep = buf.item::<Self::Item>(mmap)?.evaluate(&filter);
+                Ok(keep)
             } else {
                 Ok(true) // retain Buffer::Basic
             }
