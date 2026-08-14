@@ -171,11 +171,11 @@ impl<'d> Query<'d> {
     /// ### Errors
     ///
     /// Returns [`Error::Io`] if an error occurs during file [`IO`](io) or item deserialization.
-    pub fn nth<'q, I>(&'q self, n: usize) -> Result<Option<I>, Error>
+    pub fn nth<I>(self, n: usize) -> Result<Option<I>, Error>
     where
-        I: Unfiltered<'q> + 'q,
+        I: Unfiltered<'d> + 'd,
     {
-        I::nth(self, n)?.resolve().next().transpose().map_err(Error::from)
+        I::nth(self, n)?.included().next().transpose().map_err(Error::from)
     }
 
     /// Return an [`Iterator`] yielding one [`Outcome`] per [deserialized][1] item from the named
@@ -193,7 +193,7 @@ impl<'d> Query<'d> {
     ///
     /// ### Errors
     ///
-    /// - [`Error::Column`] if `name` is not found in the query [`BTreeMap`].
+    /// - [`Error::Column`] if `name` is not found in the [`Schema`](manifest::Schema).
     /// - [`Error::Type`] if the requested type is incompatible with the on-disk column type.
     /// - [`Error::Io`] if a per-buffer source cannot be constructed from the memory map.
     ///
@@ -201,13 +201,14 @@ impl<'d> Query<'d> {
     /// to yield only [included](Outcome::Include) items.
     ///
     /// [1]: Deserialize::deserialize
-    pub fn read<'q, I>(&'q self, name: &str) -> Result<impl Iterator<Item = Outcome<I>>, Error>
+    pub fn read<I>(self, name: &str) -> Result<impl Iterator<Item = Outcome<I>> + 'd, Error>
     where
-        I: Read + Clone + 'q,
-        I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
+        I: Read + Clone + 'd,
+        I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
         Schema: Unfolder<I>,
     {
         let buffers = self
+            .schema
             .columns
             .get(name)
             .ok_or_else(|| Error::Column { name: name.into() })?
@@ -240,11 +241,11 @@ impl<'d> Query<'d> {
     ///
     /// [1]: Deserialize::deserialize
     /// [2]: manifest::Column
-    pub fn iter<'q, I>(&'q self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'q, Error>
+    pub fn iter<I>(self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'd, Error>
     where
-        I: Unfiltered<'q> + 'q,
+        I: Unfiltered<'d> + 'd,
     {
-        let iter = I::unfiltered(self)?.resolve();
+        let iter = I::unfiltered(self)?.included();
         Ok(iter)
     }
 
