@@ -265,23 +265,23 @@ impl<'d> PartialEq for Query<'d> {
     }
 }
 
-impl<'m> Eq for Query<'m> {}
+impl<'d> Eq for Query<'d> {}
 
 /// An immutable **byte source** for one [`Column`] and all subsequent [adapters](Adapter).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Src<'q> {
+pub struct Src<'d> {
     /// An immutable reference to the parent [`Query`].
-    query: &'q Query<'q>,
+    query: Query<'d>,
     /// [`Buffer`] descriptors for the [`Column`][1] across all segments in [`Sector`][2] order.
     ///
     /// [1]: manifest::Column
     /// [2]: io::Sector
     // NOTE: sector offset increases monotonically → sector order matches on-disk segment order
-    buffers: &'q BTreeSet<Buffer>,
+    buffers: &'d BTreeSet<Buffer>,
 }
 
-impl<'q> Src<'q> {
-    /// Returns a new [mask](BitBox) that includes every [`Buffer`] for this column.
+impl<'d> Src<'d> {
+    /// Returns a new [mask](Exclude) that includes every [`Buffer`] for this column.
     ///
     /// `Buffer` inclusion is determined using a positional mask where the `n`th bit corresponds
     /// to the `n`th buffer from the `n`th data segment.
