@@ -254,21 +254,17 @@ impl Dataset {
     /// [1]: manifest::Schema
     /// [2]: query::Error::Column
     /// [3]: manifest::Manifest
-    pub fn query<'m>(&'m self, name: &str) -> Result<Query<'m>, query::Error> {
-        let columns = self
+    // noinspection RsNeedlessLifetimes → explicit 'd dataset lifetime improves readability
+    pub fn query<'d>(&'d self, name: &str) -> Result<Query<'d>, query::Error> {
+        let schema = self
             .file
             .manifest
             .schemas
             .get(name)
-            .ok_or_else(|| query::Error::Column { name: name.into() })?
-            .columns
-            .iter()
-            .map(manifest::Column::map) // borrow the on-disk descriptors; nothing is copied
-            .collect();
-        Ok(Query {
-            mmap: self.mmap.clone(), // Inexpensive Arc Clone
-            columns,
-        })
+            .ok_or_else(|| query::Error::Column { name: name.into() })?;
+        // NOTE: both fields borrow self; nothing is copied and no reference count is touched
+        let query = Query { mmap: &self.mmap, schema };
+        Ok(query)
     }
 
     /// Read the on-disk [`Binary`] segment body for the requested [`name`](String).
