@@ -143,18 +143,18 @@ impl<'d> Query<'d> {
     ///
     /// ### Errors
     ///
-    /// - [`Error::Column`] if `name` is not found in the query [`BTreeMap`].
+    /// - [`Error::Column`] if `name` is not found in the [`Schema`](manifest::Schema).
     /// - [`Error::Type`] if the requested `Type` does not match the on-disk column type.
-    pub fn column<'q, I>(&'q self, name: &str) -> Result<Column<'q, I>, Error>
+    pub fn column<I>(&self, name: &str) -> Result<Column<'d, I>, Error>
     where
-        I: Read + Clone + 'q,
-        I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
+        I: Read + Clone + 'd,
+        I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
         Schema: Unfolder<I>,
     {
-        if let Some(entry) = self.columns.get(name) {
+        if let Some(entry) = self.schema.columns.get(name) {
             let buffers = &entry.exact::<I>()?.buffers;
             // SAFETY: on-disk column type verified against requested I via manifest::Column::exact
-            let column = Src { query: self, buffers }.into();
+            let column = Src { query: *self, buffers }.into();
             Ok(column)
         } else {
             Error::Column { name: name.into() }.into()
