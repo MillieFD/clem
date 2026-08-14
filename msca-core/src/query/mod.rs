@@ -701,24 +701,16 @@ where
 /// A [data source](Src) or [adapter chain](Adapter) over one [`Column`](manifest::Column) that
 /// yields the specified [`Item`](Self::Item) type.
 ///
-/// ### Guidance
-///
-/// Each [`Filter`] is applied in the order of declaration. Filters are lazy and short-circuiting:
-/// Downstream filters **never** assess [buffers](Buffer) and [deserialized](Deserialize) items that
-/// are already excluded by upstream filters. Users are therefore advised to think carefully about
-/// the filter order; declare more restrictive filters early to reduce the result set quickly and
-/// minimise work for subsequent filters.
-///
 /// ### Lifetime
 ///
 /// This trait carries a `'d` lifetime from the underlying [`Dataset`][1] to ensure no item outlives
-/// the on-disk bytes from which it was deserialized. This design enables zero-copy reads. [`Clone`]
-/// the item to outlive `'d`.
+/// the on-disk bytes from which it was [deserialized](Deserialize). This design enables zero-copy
+/// reads. [`Clone`] the item to outlive `'d`.
 ///
 /// ### Implementation
 ///
-/// Each filter from the [`Adapter`] trait wraps the data source in a [buffer adapter](mask) that
-/// captures the necessary state to assess whole buffers and individual items. Successive filters
+/// Each [`Filter`](filter::Filter) wraps the data source in a [buffer adapter](mask) that captures
+/// the necessary state to assess whole [buffers](Buffer) and individual items. Successive filters
 /// therefore construct a nested adapter chain. Terminal methods e.g. [`Adapter::read`] lazily
 /// [resolve](mask::Resolve) the whole chain into an [item adapter](iter) chain of the same shape.
 /// The query is read in two phases:
@@ -735,9 +727,9 @@ where
 ///
 /// ##### Phase 2: Item Adapters During IO
 ///
-/// The finalised mask is consumed by the [underlying data source](Src) to yield an [`Iterator`]
-/// that lazily deserializes items from **only** the retained buffers. Enclosing adapters test the
-/// item and yield an [`Outcome`], immediately short-circuiting once the item is [excluded][3].
+/// The finished mask is consumed by [`iter::Src`] to yield an [`Iterator`] that lazily deserializes
+/// items from **only** the retained buffers. Enclosing adapters test the item and return an
+/// [`Outcome`], immediately short-circuiting once the item is [excluded][3].
 ///
 /// Refer to the [item filter module documentation](iter) for the decoding rules.
 ///
