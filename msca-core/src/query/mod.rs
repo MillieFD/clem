@@ -937,6 +937,153 @@ pub mod mask {
     use crate::io::Deserialize;
     use crate::read::{Evaluate, IsOption, Read, Reader};
 
+    /* -------------------------------------------------------------------------- Public Exports */
+
+    /// A [column](manifest::Column) [adapter](Adapter) that skips the first `n` items.
+    ///
+    /// This adapter is initialised via [`Adapter::skip`] and excludes any [buffers](Buffer) that
+    /// are provably disjoint from the requested result set.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+    pub struct Skip<'d, S>
+    where
+        S: Adapter<'d>,
+    {
+        /// The wrapped [`Adapter`] that yields [deserialized](Deserialize) items.
+        pub(super) source: S,
+        /// The number of items to [`skip`](Adapter::skip).
+        pub(super) skip: usize,
+        /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+        pub(super) phantom: PhantomData<&'d Mmap>,
+    }
+
+    impl<'d, S> Deref for Skip<'d, S>
+    where
+        S: Adapter<'d>,
+    {
+        type Target = Src<'d>;
+
+        fn deref(&self) -> &Src<'d> {
+            &self.source
+        }
+    }
+
+    /// A [column](manifest::Column) [adapter](Adapter) that reads at most `n` items.
+    ///
+    /// This adapter is initialised via [`Adapter::take`] and excludes any [buffers](Buffer) that
+    /// are provably disjoint from the requested result set.
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+    pub struct Take<'d, S>
+    where
+        S: Adapter<'d>,
+    {
+        /// The wrapped [`Adapter`] that yields [deserialized](Deserialize) items.
+        pub(super) source: S,
+        /// The number of items to [`take`](Adapter::take).
+        pub(super) take: usize,
+        /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+        pub(super) phantom: PhantomData<&'d Mmap>,
+    }
+
+    impl<'d, S> Deref for Take<'d, S>
+    where
+        S: Adapter<'d>,
+    {
+        type Target = Src<'d>;
+
+        fn deref(&self) -> &Src<'d> {
+            &self.source
+        }
+    }
+
+    /// A [column][1] [adapter](Adapter) retaining only items from `S` that are also present in `K`.
+    ///
+    /// [1]: manifest::Column
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+    pub struct SemiJoin<'d, S, K>
+    where
+        S: Adapter<'d>,
+        K: Adapter<'d>,
+    {
+        /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
+        pub(super) source: S,
+        /// The data [`Source`] that yields [deserialized](Deserialize) items to include from `S`.
+        pub(super) keys: K,
+        /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+        pub(super) phantom: PhantomData<&'d Mmap>,
+    }
+
+    impl<'d, S, K> Deref for SemiJoin<'d, S, K>
+    where
+        S: Adapter<'d>,
+        K: Adapter<'d>,
+    {
+        type Target = Src<'d>;
+
+        fn deref(&self) -> &Src<'d> {
+            &self.source
+        }
+    }
+
+    /// A [column][1] [adapter](Adapter) retaining only items from `S` that are **not** present in
+    /// `K`.
+    ///
+    /// [1]: manifest::Column
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+    pub struct AntiJoin<'d, S, K>
+    where
+        S: Adapter<'d>,
+        K: Adapter<'d>,
+    {
+        /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
+        pub(super) source: S,
+        /// The data [`Source`] that yields [deserialized](Deserialize) items to exclude from `S`.
+        pub(super) keys: K,
+        /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+        pub(super) phantom: PhantomData<&'d Mmap>,
+    }
+
+    impl<'d, S, K> Deref for AntiJoin<'d, S, K>
+    where
+        S: Adapter<'d>,
+        K: Adapter<'d>,
+    {
+        type Target = Src<'d>;
+
+        fn deref(&self) -> &Src<'d> {
+            &self.source
+        }
+    }
+
+    impl<'d, S> Source<'d> for Skip<'d, S>
+    where
+        S: Adapter<'d>,
+    {
+        type Item = S::Item;
+    }
+
+    impl<'d, S> Source<'d> for Take<'d, S>
+    where
+        S: Adapter<'d>,
+    {
+        type Item = S::Item;
+    }
+
+    impl<'d, S, K> Source<'d> for SemiJoin<'d, S, K>
+    where
+        S: Adapter<'d>,
+        K: Adapter<'d>,
+    {
+        type Item = S::Item;
+    }
+
+    impl<'d, S, K> Source<'d> for AntiJoin<'d, S, K>
+    where
+        S: Adapter<'d>,
+        K: Adapter<'d>,
+    {
+        type Item = S::Item;
+    }
+
     /* ---------------------------------------------------------------- Resolve Trait Definition */
 
     /// A [buffer](Buffer) [filter](Filter) chain that reduces the candidate buffer [mask](BitBox)
