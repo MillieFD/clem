@@ -189,20 +189,6 @@ pub enum Outcome<I> {
 }
 
 impl<I> Outcome<I> {
-    /// Converts an outcome over [`I`](I) into one over [`O`](O) by applying the specified
-    /// [closure](F) to the contained item.
-    fn map<F, O>(self, f: F) -> Outcome<O>
-    where
-        F: FnOnce(I) -> O,
-    {
-        match self {
-            Self::Include(i) => Outcome::Include(f(i)),
-            Self::Exclude(i) => Outcome::Exclude(f(i)),
-            Self::Error(e) => Outcome::Error(e),
-            Self::Absent => Outcome::Absent,
-        }
-    }
-
     /// Convert an included outcome into an excluded outcome without changing the inner [`item`](I).
     ///
     /// - [`Include`](Outcome::Include) converted to [`Exclude`](Outcome::Exclude)
