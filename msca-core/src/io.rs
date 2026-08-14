@@ -138,12 +138,16 @@ impl Sector {
     ///
     /// ### Errors
     ///
-    /// Returns [`Error::Number`] if `length` is zero or either argument overflows its target type.
-    pub fn new<A, B>(offset: A, size: B) -> Result<Self, Error>
+    /// - Returns [`Error::Convert`][1] if `offset` or `size` overflow `u64`.
+    /// - Returns [`Error::Zero`][2] if `size` is zero.
+    ///
+    /// [1]: number::Error::Convert
+    /// [2]: number::Error::Zero
+    pub fn new<A, B>(offset: A, size: B) -> Result<Self, number::Error>
     where
         A: TryInto<u64>,
         B: TryInto<NonZeroU64>,
-        Error: From<A::Error> + From<B::Error>,
+        number::Error: From<A::Error> + From<B::Error>,
     {
         Ok(Self {
             offset: offset.try_into()?,
@@ -154,12 +158,12 @@ impl Sector {
     /// [`Seek`](AsyncSeek::poll_seek) the provided bytes stream to the start of [`self`](Sector)
     /// and return the new position.
     ///
-    /// Returns [`Error::Io`] if the underlying seek operation fails.
-    pub async fn seek_to_start<F>(&self, stream: &mut F) -> Result<u64, Error>
+    /// Returns [`std::io::Error`] if the underlying [seek](AsyncSeekExt::seek) operation fails.
+    pub async fn seek_to_start<F>(&self, stream: &mut F) -> Result<u64, std::io::Error>
     where
         F: AsyncSeek + Unpin + ?Sized,
     {
-        stream.seek(SeekFrom::Start(self.offset)).await.map_err(Error::from)
+        stream.seek(SeekFrom::Start(self.offset)).await
     }
 
     /// Returns the offset immediately following [`self`](Sector), or [`None`] on `u64` overflow.
