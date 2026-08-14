@@ -306,6 +306,13 @@ pub trait Reader<'a, I> {
     /// - Per-item deserialisation errors surface **lazily** on [`next`](Iterator::next).
     #[rustfmt::skip] // single line where clause improves readability
     fn iter(self) -> Result<impl Iterator<Item = Result<I, Error>> + 'a, Error> where Self: Sized;
+
+    fn one(self) -> Result<I, Error>
+    where
+        Self: Sized,
+    {
+        self.iter()?.next().transpose()?.ok_or(Error::Truncated { expected: 1, actual: usize::MIN })
+    }
 }
 
 /* ----------------------------------------------------------------- Reader Trait Implementation */
