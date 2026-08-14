@@ -477,24 +477,6 @@ impl Buffer {
         };
         above || below
     }
-
-    /// Deserialize the single [item](I) from a [`Compact`](Buffer::Compact) buffer.
-    ///
-    /// ### Errors
-    ///
-    /// Returns [`io::Error`] if the sector cannot be resolved or holds no item.
-    pub(crate) fn item<'m, I>(&self, mmap: &'m Mmap) -> Result<I, io::Error>
-    where
-        I: Read + 'm,
-        I::Src<'m>: Deserialize<'m, Ok = I::Src<'m>> + Reader<'m, I>,
-    {
-        let mut bytes = self.sector().slice(mmap)?;
-        I::Src::deserialize(&mut bytes)?
-            .iter()?
-            .next()
-            .transpose()?
-            .ok_or(io::Error::Truncated { expected: 1, actual: usize::MIN })
-    }
 }
 
 /* ------------------------------------------------------------------------------ Specific Error */
