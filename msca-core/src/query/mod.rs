@@ -628,62 +628,6 @@ where
     }
 }
 
-/// A [column](manifest::Column) [adapter](Adapter) that skips the first `n` items.
-///
-/// This adapter is initialised via [`Adapter::skip`] and excludes any [buffers](Buffer) that are
-/// provably disjoint from the requested result set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Skip<'d, S>
-where
-    S: Adapter<'d>,
-{
-    /// The wrapped [`Adapter`] which yields [deserialized](Deserialize) items.
-    source: S,
-    /// The number of items to [`skip`](Adapter::skip).
-    skip: usize,
-    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'d Mmap>,
-}
-
-impl<'d, S> Deref for Skip<'d, S>
-where
-    S: Adapter<'d>,
-{
-    type Target = Src<'d>;
-
-    fn deref(&self) -> &Src<'d> {
-        &self.source
-    }
-}
-
-/// A [column](manifest::Column) [adapter](Adapter) that reads at most `n` items.
-///
-/// This adapter is initialised via [`Adapter::take`] and excludes any [buffers](Buffer) that are
-/// provably disjoint from the requested result set.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Take<'d, S>
-where
-    S: Adapter<'d>,
-{
-    /// The wrapped [`Adapter`] which yields [deserialized](Deserialize) items.
-    source: S,
-    /// The number of items to [`take`](Adapter::take).
-    take: usize,
-    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'d Mmap>,
-}
-
-impl<'d, S> Deref for Take<'d, S>
-where
-    S: Adapter<'d>,
-{
-    type Target = Src<'d>;
-
-    fn deref(&self) -> &Src<'d> {
-        &self.source
-    }
-}
-
 /* ---------------------------------------------------------------------------------- Join Nodes */
 
 /// A set intersection `∩` **node** returning items from `A` [`and`](Join::and) `B`.
