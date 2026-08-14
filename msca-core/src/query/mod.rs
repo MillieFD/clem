@@ -1352,26 +1352,29 @@ pub mod mask {
             let origin = iter::Adapter::origin(&source, mask);
             self.take = self.take.saturating_add(origin);
             let (limit, keep) = mask
-                .iter_mut()
+                .iter()
+                .by_vals()
                 .zip(source.buffers)
                 .enumerate()
                 .find_map(|b| {
-                    if *b.1.0 {
+                    if b.1.0 {
                         if let Some(n) = match b.1.1.count().try_into().map_err(io::Error::from) {
-                            Ok(c) if c > 0 => self.take.checked_sub(c).filter(|sub| *sub > 0),
+                            Ok(c) => self.take.checked_sub(c).filter(|n| n > &usize::MIN),
                             Err(e) => return Err(e).into(),
-                            other => self.take.into(),
                         } {
                             self.take = n;
-                            b.1.0.commit(false);
                         } else {
                             let out = (b.0, self.take);
                             return Ok(out).into();
                         }
-                    }
+                    };
                     None
                 })
                 .transpose()?
+                .inspect(|i| {
+                    // NOTE: clear all buffers beyond the retained slice
+                    mask.split_at_mut(i.0 + 1).1.fill(false)
+                })
                 .unwrap_or((mask.len(), self.take));
             Ok(iter::Take { source, limit, keep })
         }
