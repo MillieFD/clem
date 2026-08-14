@@ -177,7 +177,7 @@ impl Schema {
     pub(crate) async fn finish(self, dataset: &mut Dataset) -> Result<Sector, io::Error> {
         let name = self.name.clone();
         match dataset.file.manifest.schemas.entry(name) {
-            Entry::Occupied(e) => self.occupied(e),
+            Entry::Occupied(e) => self.occupied(e).map_err(Into::into),
             Entry::Vacant(..) => dataset.file.write(self).await,
         }
     }
@@ -186,7 +186,7 @@ impl Schema {
     ///
     /// Returns the existing on-disk schema [`Sector`] if both underlying definitions are identical,
     /// or [`Error::Collision`](manifest::Error::Collision) if the underlying definitions differ.
-    fn occupied(&self, entry: Occupied) -> Result<Sector, io::Error> {
+    fn occupied(&self, entry: Occupied) -> Result<Sector, manifest::Error> {
         match entry.get().columns == self.columns.iter().map(Schema::map).collect() {
             true => Ok(entry.get().sector),
             false => manifest::Error::Collision { name: entry.key().clone() }.into(),
