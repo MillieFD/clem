@@ -252,14 +252,6 @@ pub struct Column {
 }
 
 impl Column {
-    /// Map one on-disk [`Schema`] entry to the borrowed entry a [query](query::Query) holds.
-    ///
-    /// The tuple is the sanctioned shape here because [`Iterator::map`] collects pairs directly
-    /// into the query [`BTreeMap`]; naming a struct would force a closure at the call site.
-    pub(crate) const fn map<'m>(e: (&'m String, &'m Self)) -> (&'m str, &'m Self) {
-        (e.0.as_str(), e.1)
-    }
-
     /// Returns [`Error::Type`][1] if this column does not hold items of type [`I`]; otherwise
     /// returns [`self`](Column) so a caller chains straight into the read it was verifying for.
     ///
