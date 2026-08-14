@@ -328,12 +328,22 @@ where
         });
         Ok(iter)
     }
+
+    fn one(mut self) -> Result<I, Error> {
+        // NOTE: deserialize fixed-width item directly from slice (override improves performance)
+        self.deserialize_into()
+    }
 }
 
 impl<'a> Reader<'a, bool> for &'a BitSlice<u8, Lsb0> {
     fn iter(self) -> Result<impl Iterator<Item = Result<bool, Error>> + 'a, Error> {
         let iter = self.iter().by_vals().map(Ok);
         Ok(iter)
+    }
+
+    fn one(self) -> Result<bool, Error> {
+        // NOTE: deserialize first bit directly from slice (override improves performance)
+        self.first().map(|b| *b).ok_or(Error::Truncated { expected: 1, actual: usize::MIN })
     }
 }
 
@@ -351,6 +361,14 @@ where
         });
         Ok(iter)
     }
+
+    fn one(self) -> Result<Option<I>, Error> {
+        // NOTE: data sub-buffer untouched if mask is false (override improves performance)
+        match Reader::<bool>::one(self.mask)? {
+            true => self.data.one().map(Some),
+            false => Ok(None),
+        }
+    }
 }
 
 impl<'a, I> Reader<'a, Option<I>> for OptInSitu<'a>
@@ -365,6 +383,11 @@ where
             true => None,
         });
         Ok(iter)
+    }
+
+    fn one(mut self) -> Result<Option<I>, Error> {
+        // NOTE: deserialize fixed-width item directly from slice (override improves performance)
+        Option::<I>::deserialize(&mut self.0)
     }
 }
 
