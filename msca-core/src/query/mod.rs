@@ -195,7 +195,6 @@ impl<'d> Query<'d> {
     ///
     /// - [`Error::Column`] if `name` is not found in the [`Schema`](manifest::Schema).
     /// - [`Error::Type`] if the requested type is incompatible with the on-disk column type.
-    /// - [`Error::Io`] if a per-buffer source cannot be constructed from the memory map.
     ///
     /// Refer to [`Query::iter`] for a resolved alternative that automatically re-polls the iterator
     /// to yield only [included](Outcome::Include) items.
@@ -215,7 +214,7 @@ impl<'d> Query<'d> {
             .exact::<I>()?
             .buffers
             .iter();
-        let items = iter::Src::new(buffers, self.mmap).iter()?.map(Outcome::from);
+        let items = iter::Src::new(buffers, self.mmap).iter().map(Outcome::from);
         Ok(items)
     }
 
