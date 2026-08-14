@@ -1012,8 +1012,8 @@ pub(crate) trait Exclude<'d>: Source<'d> + Sized {
     ///
     /// ### Errors
     ///
-    /// - Returns [`Error::Io`] if a [compact][1] item cannot be read from the [memory map](Mmap).
-    /// - Forwards [`Error::Io`] from the fallible `test` function.
+    /// - Returns [`io::Error`] if a [compact][1] item cannot be read from the [memory map](Mmap).
+    /// - Forwards [`io::Error`] from the fallible `test` function.
     ///
     /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
@@ -1043,8 +1043,8 @@ pub(crate) trait Exclude<'d>: Source<'d> + Sized {
     ///
     /// ### Errors
     ///
-    /// - Returns [`Error::Io`] if a [compact][1] item cannot be read from the [memory map](Mmap).
-    /// - Forwards [`Error::Io`] from the fallible `test` function.
+    /// - Returns [`io::Error`] if a [compact][1] item cannot be read from the [memory map](Mmap).
+    /// - Forwards [`io::Error`] from the fallible `test` function.
     ///
     /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
