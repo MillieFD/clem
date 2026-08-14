@@ -303,26 +303,27 @@ impl<'d> Src<'d> {
     ///
     /// ### Errors
     ///
-    /// Returns [`Error::Number`] if any recorded count overflows [`usize`].
-    pub(crate) fn counts(&self, mask: &BitBox) -> impl Iterator<Item = Result<usize, Error>> {
-        self.buffers.iter().zip(mask.iter().by_vals()).map(|e| match e.1 {
-            true => e.0.count().try_into().map_err(Error::from),
+    /// Returns [`io::Error::Number`] if any recorded count overflows [`usize`].
+    pub(crate) fn counts(&self, mask: &BitBox) -> impl Iterator<Item = Result<usize, io::Error>> {
+        let bits = mask.iter().by_vals();
+        self.buffers.iter().zip(bits).map(|e| match e.1 {
+            true => e.0.count().try_into().map_err(io::Error::from),
             false => Ok(usize::MIN),
         })
     }
 
-    /// Returns **only** the [`Buffer`] descriptors included by the [mask](BitBox) in [`Sector`][1]
+    /// Returns **only** the [`Buffer`] descriptors included by the [mask](Exclude) in [`Sector`][1]
     /// order.
     ///
     /// [1]: io::Sector
     // NOTE: owned slice can outlive the mask; Box prevents resize allocations at the type level
-    pub(crate) fn retained(&self, mask: &BitBox) -> Box<[&'q Buffer]> {
+    pub(crate) fn retained(&self, mask: &BitBox) -> Box<[&'d Buffer]> {
         mask.iter().by_vals().zip(self.buffers).filter(|b| b.0).map(|b| b.1).collect()
     }
 
     /// An iterator method that applies a fallible [test](FnMut) to each [`Buffer`] descriptor:
     ///
-    /// - Skips any buffers that are already excluded by the [mask](BitBox).
+    /// - Skips any buffers that are already [excluded](Exclude) by the [mask](BitBox).
     /// - Retains all buffers for which `test` returns `true`.
     /// - Excludes any buffers for which `test` returns `false`.
     ///
@@ -330,14 +331,14 @@ impl<'d> Src<'d> {
     ///
     /// ### Errors
     ///
-    /// Forwards [`Error::Io`] from the fallible `test` function.
+    /// Forwards [`io::Error`] from the fallible `test` function.
     pub(crate) fn try_exclude<F>(&self, mask: &mut BitBox, mut test: F) -> Result<usize, io::Error>
     where
-        F: FnMut(&Buffer, &'q Mmap) -> Result<bool, io::Error>,
+        F: FnMut(&Buffer, &'d Mmap) -> Result<bool, io::Error>,
     {
         mask.iter_mut().zip(self.buffers).try_fold(usize::MIN, |n, (bit, buf)| {
             if *bit {
-                match test(buf, &self.query.mmap)? {
+                match test(buf, self.query.mmap)? {
                     true => return Ok(n + 1),
                     false => bit.commit(false),
                 }
