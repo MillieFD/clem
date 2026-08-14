@@ -251,9 +251,8 @@ impl<'d> Query<'d> {
 
     /// Returns the total number of on-disk items for this [`Schema`] across every segment; the sum
     /// of [`Buffer`](Buffer)`::`[`count`](Buffer::count) for one [`Column`](manifest::Column).
-    pub fn count(&self) -> u64 {
-        // NOTE: copied fn dereferences &&Column → &Column (no performance cost).
-        self.columns.values().next().copied().map(manifest::Column::count).unwrap_or_default()
+    pub fn count(self) -> u64 {
+        self.schema.count()
     }
 }
 
