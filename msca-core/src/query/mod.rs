@@ -1119,15 +1119,8 @@ pub mod mask {
         /// The [item filter chain](iter::Adapter) returned by [`resolve`](Resolve::resolve).
         type Ok;
 
-        /// [Excludes](Exclude) candidate buffers from the [mask](BitBox) before
-        /// [resolving](Resolve::resolve) into an [item filter chain][3] of the same shape.
-        ///
-        /// ### Guidance
-        ///
-        /// Each [`Filter`] is applied in the order of declaration. Filters are lazy and
-        /// short-circuiting: enclosing filters **never** reassess [buffers](Buffer) that are
-        /// already excluded by upstream filters. Users are advised to declare more restrictive
-        /// filters early to reduce the result set quickly and minimise work for subsequent filters.
+        /// [Excludes](Exclude) candidate buffers from the [mask](BitBox) before consuming
+        /// [`self`](Self) and returning an [item filter chain](iter) of the same shape.
         ///
         /// ### Errors
         ///
