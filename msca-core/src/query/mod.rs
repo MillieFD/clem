@@ -1453,16 +1453,8 @@ pub mod mask {
 
 /* -------------------------------------------------------------------------- Item Filter Module */
 
-    impl<S, F> Reconcile for Filter<S, F>
-    where
-        S: Reconcile,
-    {
-        fn and<O>(&mut self, other: &mut O) -> Result<&mut Self, Error>
-        where
-            O: Adapter,
-        {
-        }
-    }
+pub mod iter {
+    //! The **item [iterator](Iterator) adapter chain** evaluated during file [`IO`](io).
 
     use std::collections::BTreeSet;
     use std::iter;
@@ -1471,60 +1463,93 @@ pub mod mask {
     use bitvec::boxed::BitBox;
 
     use super::*;
-    use crate::io::{Deserialize, Error};
-    use crate::read::{Evaluate, IsOption, Outcome, Read, Reader};
+    use crate::io::Error;
 
     /* -------------------------------------------------------------------------- Public Exports */
 
-    pub(crate) struct Root<'a, B> {
-        buffers: B,
-        mmap: &'a Mmap,
+    /// An [`Iterator`] that lazily [deserializes](Deserialize) items from one [`Buffer`].
+    enum Decode<S, I>
+    where
+        S: Iterator<Item = Result<I, Error>>,
+        I: Clone,
+    {
+        /// An [`Iterator`] that repeats one item for `n` number of [iterations](Iterator::next).
+        One(iter::RepeatN<I>),
+        /// An [`Iterator`] that yields heterogeneous items from one [`Buffer`].
+        Std(S),
+        /// A [buffer](Buffer) [deserialization](Deserialize) [error](Error) yielded **once**.
+        Err(iter::Once<Error>),
     }
-    impl<'m, B> Root<'m, B> {
-        pub(crate) const fn new(buffers: B, mmap: &'m Mmap) -> Self {
+
+    impl<S, I> Iterator for Decode<S, I>
+    where
+        S: Iterator<Item = Result<I, Error>>,
+        I: Clone,
+    {
+        type Item = Result<I, Error>;
+
+        fn next(&mut self) -> Option<Result<I, Error>> {
+            match self {
+                Self::One(i) => i.next().map(Ok),
+                Self::Std(i) => i.next(),
+                Self::Err(e) => e.next().map(Err),
+            }
+        }
+    }
+
+    /// A lazy [deserializing](Deserialize) **item source** for one [`Column`] chained across all
+    /// on-disk [buffers](Buffer).
+    pub(crate) struct Src<'d, B>
+    where
+        B: IntoIterator<Item = &'d Buffer> + 'd,
+    {
+        /// Retained [`Buffer`] descriptors.
+        buffers: B,
+        /// Read-only [memory map](Mmap) over the immutable segment region.
+        mmap: &'d Mmap,
+    }
+
+    impl<'d, B> Src<'d, B>
+    where
+        B: IntoIterator<Item = &'d Buffer>,
+    {
+        pub(crate) const fn new(buffers: B, mmap: &'d Mmap) -> Self {
             Self { buffers, mmap }
         }
 
-        /// Deserialize each buffer item exactly once, yielding one [`Result`] per item.
+        /// Consumes [`self`](Src) and returns an item [`Iterator`].
         ///
-        /// Every per-buffer source is constructed **eagerly**, so sector and framing errors – and
-        /// the single item of a compact buffer – surface here rather than mid-stream. Each source
-        /// is deserialized exactly once, ahead of the variant split.
+        /// Items are [deserialized](Deserialize) exactly once before being [filtered](filter)
+        /// through the [item terator adapter chain](iter).
         ///
-        /// The item lifetime binds to the memory map `'m`, decoupled from the buffer-iteration
-        /// borrow `'b`, so a zero-copy borrowed item outlives the transient buffer cursor.
-        ///
-        /// ### Errors
-        ///
-        /// Returns [`Error::Truncated`] if a buffer sector extends beyond the memory map or a
-        /// compact body yields no item, or any error raised while [deserializing](Deserialize) a
-        /// per-buffer source.
-        pub(crate) fn iter<I>(self) -> Result<impl Iterator<Item = Result<I, Error>> + 'b, Error>
+        /// Refer to [`Src`] for more information.
+        pub(crate) fn into_iter<I, S>(self) -> impl Iterator<Item = Result<I, Error>> + 'd
         where
-            B: 'b,
-            'm: 'b,
-            I: Read + Clone + 'm,
-            I::Src<'m>: Deserialize<'m, Ok = I::Src<'m>> + Reader<'m, I>,
+            I: Read<'d, Src = S> + Clone + 'd,
+            S: Deserialize<'d, Ok = S> + Reader<'d, I>,
         {
-            let mmap = self.mmap;
-            let size = self.buffers.size_hint().0;
-            let mut runs = Vec::with_capacity(size);
-            for buffer in self.buffers {
-                let mut bytes = buffer.sector().slice(mmap)?;
-                let len: usize = buffer.count().try_into()?;
-                let src = I::Src::deserialize(&mut bytes)?;
-                let flow = if matches!(buffer, Buffer::Compact { .. }) {
-                    let missing = Error::Truncated { expected: len, actual: usize::MIN };
-                    let item = src.iter()?.next().transpose()?.ok_or(missing)?;
-                    let repeated = iter::repeat_n(item, len).map(Ok);
-                    Decode::Same(repeated)
-                } else {
-                    Decode::Each(src.iter()?.take(len))
-                };
-                runs.push(flow);
-            }
-            let items = runs.into_iter().flatten();
-            Ok(items)
+            self.buffers
+                .into_iter()
+                .map(|b| {
+                    let n = b.count().try_into()?;
+                    let mut bytes = b.sector().slice(self.mmap)?;
+                    let src = S::deserialize(&mut bytes)?;
+                    let reader = if let Buffer::Compact { .. } = b {
+                        let item = src.one()?;
+                        let iter = iter::repeat_n(item, n);
+                        Decode::One(iter)
+                    } else {
+                        let iter = src.iter()?.take(n);
+                        Decode::Std(iter)
+                    };
+                    Ok(reader)
+                })
+                .flat_map(|s| {
+                    s.unwrap_or_else(|e| {
+                        let err = iter::once(e);
+                        Decode::Err(err)
+                    })
+                })
         }
     }
 
