@@ -1053,7 +1053,7 @@ where
     }
 }
 
-/* -------------------------------------------------------------------- Extreme Trait Definition */
+/* --------------------------------------------------------------------- MinMax Trait Definition */
 
 /// An **in-memory buffer** that can locate the [minimum](Ordering::min) or [maximum](Ordering::max)
 /// item within serialized data.
@@ -1100,7 +1100,7 @@ pub trait MinMax {
     }
 }
 
-/* ---------------------------------------------------------------- Extreme Trait Implementation */
+/* ----------------------------------------------------------------- MinMax Trait Implementation */
 
 impl<I> MinMax for Vec<I>
 where
