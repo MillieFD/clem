@@ -503,14 +503,14 @@ where
     phantom: PhantomData<&'d Mmap>,
 }
 
-impl<'q, S, I> Deref for OneOf<'q, S, I>
+impl<'d, S, I> Deref for OneOf<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: schema::BitMatch,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
@@ -519,9 +519,9 @@ where
 /// at least one candidate from an ordered [collection](std::collections).
 #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 // NOTE: this struct is used for both "mask" and "iter" adapter chains
-pub struct OneOfSorted<'q, S, I>
+pub struct OneOfSorted<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: Ord,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
@@ -532,17 +532,17 @@ where
     /// [1]: https://doc.rust-lang.org/book/ch04-03-slices.html
     items: Box<[I]>,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'d Mmap>,
 }
 
-impl<'q, S, I> Deref for OneOfSorted<'q, S, I>
+impl<'d, S, I> Deref for OneOfSorted<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: Ord,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
@@ -553,9 +553,9 @@ where
 /// [1]: manifest::Column
 #[derive(Clone, Debug)]
 // NOTE: this struct is used for both "mask" and "iter" adapter chains
-pub struct OneOfSet<'q, S, I>
+pub struct OneOfSet<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: Eq + Hash,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
@@ -565,65 +565,65 @@ where
     /// [1]: std::hash::Hasher
     items: HashSet<I, Xxh3Builder>,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'d Mmap>,
 }
 
-impl<'q, S, I> Deref for OneOfSet<'q, S, I>
+impl<'d, S, I> Deref for OneOfSet<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: Eq + Hash,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
 
 /// A [column](manifest::Column) [adapter](Adapter) that discards [`None`] items.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct IsSome<'q, S, I>
+pub struct IsSome<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: Read,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
     /// Zero-sized **marker** carrying the flattened [`Some`] type and [`Query`] lifetime.
-    phantom: PhantomData<&'q I>,
+    phantom: PhantomData<&'d I>,
 }
 
-impl<'q, S, I> Deref for IsSome<'q, S, I>
+impl<'d, S, I> Deref for IsSome<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: Read,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
 
 /// A [column](manifest::Column) [adapter](Adapter) that retains only [`None`] items.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct IsNone<'q, S>
+pub struct IsNone<'d, S>
 where
-    S: Source<'q>,
+    S: Source<'d>,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'d Mmap>,
 }
 
-impl<'q, S> Deref for IsNone<'q, S>
+impl<'d, S> Deref for IsNone<'d, S>
 where
-    S: Source<'q>,
+    S: Source<'d>,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
@@ -633,25 +633,25 @@ where
 /// This adapter is initialised via [`Adapter::skip`] and excludes any [buffers](Buffer) that are
 /// provably disjoint from the requested result set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Skip<'q, S>
+pub struct Skip<'d, S>
 where
-    S: Adapter<'q>,
+    S: Adapter<'d>,
 {
     /// The wrapped [`Adapter`] which yields [deserialized](Deserialize) items.
     source: S,
     /// The number of items to [`skip`](Adapter::skip).
     skip: usize,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'d Mmap>,
 }
 
-impl<'q, S> Deref for Skip<'q, S>
+impl<'d, S> Deref for Skip<'d, S>
 where
-    S: Adapter<'q>,
+    S: Adapter<'d>,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
@@ -661,25 +661,25 @@ where
 /// This adapter is initialised via [`Adapter::take`] and excludes any [buffers](Buffer) that are
 /// provably disjoint from the requested result set.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Take<'q, S>
+pub struct Take<'d, S>
 where
-    S: Adapter<'q>,
+    S: Adapter<'d>,
 {
     /// The wrapped [`Adapter`] which yields [deserialized](Deserialize) items.
     source: S,
     /// The number of items to [`take`](Adapter::take).
     take: usize,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'d Mmap>,
 }
 
-impl<'q, S> Deref for Take<'q, S>
+impl<'d, S> Deref for Take<'d, S>
 where
-    S: Adapter<'q>,
+    S: Adapter<'d>,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
