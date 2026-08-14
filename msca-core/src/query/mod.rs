@@ -298,7 +298,7 @@ impl<'q> Src<'q> {
     /// ```
     ///
     /// [Filters](Filter) are applied subtractively to reduce the mask.
-    pub(crate) fn mask(&self) -> BitBox {
+    pub fn mask(&self) -> BitBox {
         let n = self.buffers.len();
         BitVec::repeat(true, n).into_boxed_bitslice()
     }
