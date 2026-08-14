@@ -929,7 +929,7 @@ pub mod mask {
 
     use super::*;
     use crate::io::Deserialize;
-    use crate::read::{Evaluate, IsOption, Read, Reader};
+    use crate::read::{Evaluate, IsOption, Read};
 
     /* -------------------------------------------------------------------------- Public Exports */
 
@@ -1571,7 +1571,7 @@ pub mod iter {
         S: Deref,
         I: Ord,
     {
-        type Target = <S as Deref>::Target;
+        type Target = S::Target;
 
         fn deref(&self) -> &Self::Target {
             &self.source
@@ -1609,7 +1609,7 @@ pub mod iter {
         S: Deref,
         I: Ord,
     {
-        type Target = <S as Deref>::Target;
+        type Target = S::Target;
 
         fn deref(&self) -> &Self::Target {
             &self.source
@@ -1643,7 +1643,7 @@ pub mod iter {
     where
         S: Deref,
     {
-        type Target = <S as Deref>::Target;
+        type Target = S::Target;
 
         fn deref(&self) -> &Self::Target {
             &self.source
@@ -1676,7 +1676,7 @@ pub mod iter {
     where
         S: Deref,
     {
-        type Target = <S as Deref>::Target;
+        type Target = S::Target;
 
         fn deref(&self) -> &Self::Target {
             &self.source
