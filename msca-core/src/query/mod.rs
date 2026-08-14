@@ -78,7 +78,7 @@ pub struct Query<'d> {
     pub schema: &'d manifest::Schema,
 }
 
-impl<'m> Query<'m> {
+impl<'d> Query<'d> {
     /// Map each **distinct** item to the corresponding on-disk index.
     ///
     /// The [`Dataset`][1] is read in ascending insertion order; items record their first index and
@@ -90,10 +90,10 @@ impl<'m> Query<'m> {
     /// - [`Error::Io`] if a deserialization failure occurs.
     ///
     /// [1]: crate::dataset::Dataset
-    pub fn indexed<'q, I, N>(&'q self) -> Result<HashMap<I, N, Xxh3Builder>, Error>
+    pub fn into_hash_map<I, N>(self) -> Result<HashMap<I, N, Xxh3Builder>, Error>
     where
         N: Unsigned,
-        I: Unfiltered<'q> + Eq + Hash + 'q,
+        I: Unfiltered<'d> + Eq + Hash + 'd,
     {
         let iter = self.iter::<I>()?;
         Self::intern(iter).map_err(Error::from)
