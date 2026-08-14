@@ -147,8 +147,7 @@ impl<'d> Query<'d> {
     /// - [`Error::Type`] if the requested `Type` does not match the on-disk column type.
     pub fn column<I>(&self, name: &str) -> Result<Column<'d, I>, Error>
     where
-        I: Read + Clone + 'd,
-        I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
+        I: Read<'d> + Clone + 'd,
         Schema: Unfolder<I>,
     {
         if let Some(entry) = self.schema.columns.get(name) {
@@ -202,8 +201,7 @@ impl<'d> Query<'d> {
     /// [1]: Deserialize::deserialize
     pub fn read<I>(self, name: &str) -> Result<impl Iterator<Item = Outcome<I>> + 'd, Error>
     where
-        I: Read + Clone + 'd,
-        I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
+        I: Read<'d> + Clone + 'd,
         Schema: Unfolder<I>,
     {
         let buffers = self
@@ -214,7 +212,7 @@ impl<'d> Query<'d> {
             .exact::<I>()?
             .buffers
             .iter();
-        let items = iter::Src::new(buffers, self.mmap).iter().map(Outcome::from);
+        let items = iter::Src::new(buffers, self.mmap).into_iter().map(Outcome::from);
         Ok(items)
     }
 
@@ -584,7 +582,7 @@ where
 pub struct IsSome<'d, S, I>
 where
     S: Source<'d>,
-    I: Read,
+    I: Read<'d>,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
@@ -595,7 +593,7 @@ where
 impl<'d, S, I> Deref for IsSome<'d, S, I>
 where
     S: Source<'d>,
-    I: Read,
+    I: Read<'d>,
 {
     type Target = Src<'d>;
 
@@ -730,7 +728,7 @@ where
 /// items from **only** the retained buffers. Enclosing adapters test the item and return an
 /// [`Outcome`], immediately short-circuiting once the item is [excluded][3].
 ///
-/// Refer to the [item filter module documentation](iter) for the decoding rules.
+/// Refer to the [item filter module documentation](iter) for more information.
 ///
 /// ### Guidance
 ///
@@ -746,21 +744,16 @@ where
 /// [1]: crate::dataset::Dataset
 /// [2]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
 /// [3]: Outcome::exclude
-pub trait Source<'d>: Deref<Target = Src<'d>>
-where
-    <Self::Item as Read>::Src<'d>: Deserialize<'d, Ok = <Self::Item as Read>::Src<'d>>,
-    <Self::Item as Read>::Src<'d>: Reader<'d, Self::Item>,
-{
+pub trait Source<'d>: Deref<Target = Src<'d>> {
     /// The [deserialized](Deserialize) item type [read](Read) by the chain.
-    type Item: Read + 'd;
+    type Item: Read<'d> + 'd;
 }
 
 /* ----------------------------------------------------------------- Source Trait Implementation */
 
 impl<'d, I> Source<'d> for Column<'d, I>
 where
-    I: Read + Clone + 'd,
-    I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
+    I: Read<'d> + Clone + 'd,
 {
     type Item = I;
 }
@@ -815,8 +808,7 @@ where
 impl<'d, S, I> Source<'d> for IsSome<'d, S, I>
 where
     S: Source<'d>,
-    I: Read + Clone + 'd,
-    I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
+    I: Read<'d> + Clone + 'd,
 {
     type Item = I;
 }
@@ -865,14 +857,16 @@ pub(crate) trait Exclude<'d>: Source<'d> + Sized {
     /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
     /// [1]: Buffer::Compact
-    fn with_item<I, F>(&self, mask: &mut BitBox, filter: F) -> Result<usize, io::Error>
+    fn with_item<I, F, S>(&self, mask: &mut BitBox, filter: F) -> Result<usize, io::Error>
     where
-        Self::Item: Evaluate<I>,
+        Self::Item: Evaluate<I> + Read<'d, Src = S>,
+        S: Deserialize<'d, Ok = S> + Reader<'d, Self::Item>,
         F: Fn(&I) -> bool,
     {
         self.try_exclude(mask, |buf, mmap| {
             if let Buffer::Compact { .. } = buf {
-                let keep = buf.item::<Self::Item>(mmap)?.evaluate(&filter);
+                let mut bytes = buf.sector().slice(mmap)?;
+                let keep = S::deserialize(&mut bytes)?.one()?.evaluate(&filter);
                 Ok(keep)
             } else {
                 Ok(true)
@@ -895,9 +889,10 @@ pub(crate) trait Exclude<'d>: Source<'d> + Sized {
     /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
     /// [1]: Buffer::Compact
-    fn with_min_max<I, F, O>(&self, mask: &mut BitBox, filter: F, op: O) -> Result<usize, io::Error>
+    fn with_min_max<I, F, O, S>(&self, mask: &mut BitBox, f: F, op: O) -> Result<usize, io::Error>
     where
-        Self::Item: Evaluate<I>,
+        Self::Item: Evaluate<I> + Read<'d, Src = S>,
+        S: Deserialize<'d, Ok = S> + Reader<'d, Self::Item>,
         I: for<'de> Deserialize<'de, Ok = I> + 'd,
         F: Fn(&I) -> bool,
         O: Fn(&I, &I) -> bool,
@@ -909,7 +904,8 @@ pub(crate) trait Exclude<'d>: Source<'d> + Sized {
                 let keep = op(&min, &max);
                 Ok(keep)
             } else if let Buffer::Compact { .. } = buf {
-                let keep = buf.item::<Self::Item>(mmap)?.evaluate(&filter);
+                let mut bytes = buf.sector().slice(mmap)?;
+                let keep = S::deserialize(&mut bytes)?.one()?.evaluate(&f);
                 Ok(keep)
             } else {
                 Ok(true) // retain Buffer::Basic
