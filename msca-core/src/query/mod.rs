@@ -108,11 +108,14 @@ impl<'d> Query<'d> {
     ///
     /// ### Errors
     ///
-    /// - [`Error::Number`] if an index overflows `N`.
-    /// - [`Error::Io`] if a deserialization failure occurs.
+    /// - [`Error::Number`][1] if an index overflows `N`.
+    /// - [`Error::Io`][2] if a deserialization failure occurs.
     ///
-    /// Refer to [`Query::indexed`] and [`Adapter::indexed`] for the public entry points.
-    fn intern<I, N, S>(items: S) -> Result<HashMap<I, N, Xxh3Builder>, Error>
+    /// Refer to [`Query::into_hash_map`] and [`Adapter::into_hash_map`] for the entry points.
+    ///
+    /// [1]: io::Error::Number
+    /// [2]: io::Error::Io
+    fn intern<I, N, S>(items: S) -> Result<HashMap<I, N, Xxh3Builder>, io::Error>
     where
         N: Unsigned,
         I: Eq + Hash,
