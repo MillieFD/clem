@@ -1086,33 +1086,36 @@ pub mod mask {
 
     /* ---------------------------------------------------------------- Resolve Trait Definition */
 
-    /// A [buffer](Buffer) [filter](Filter) chain that reduces the candidate buffer [mask](BitBox)
+    /// A [buffer](Buffer) [filter](Filter) chain that reduces the candidate buffer [mask](Exclude)
     /// before [resolving](Resolve::resolve) into an [item filter chain][1] of the same shape.
     ///
     /// ### Lifetime
     ///
-    /// This trait carries a `'q` lifetime from the parent [`Query`] to ensure that no item outlives
+    /// This trait carries a `'d` lifetime from the [`Dataset`][2] to ensure that no item outlives
     /// the file from which it was [deserialized](Deserialize). This design enables zero-copy reads.
-    /// [`Clone`] the item to outlive `'q`.
+    /// [`Clone`] the item to outlive `'d`.
+    ///
+    /// ### Implementation
+    ///
+    /// Each [`Filter`](filter::Filter) wraps the [data source](Source) in an [`Adapter`] that
+    /// captures the necessary state to assess whole [buffers](Buffer) and individual items.
+    /// Successive filters therefore construct a nested adapter chain. Terminal methods e.g.
+    /// [`Adapter::read`] lazily convert the whole chain into a nested [`Iterator`] chain of the
+    /// same shape. This trait determines the [buffer adapter](mask) → [item adapter](iter) state
+    /// transition.
+    ///
+    /// Refer to the [source trait documentation](Source) for more details.
     ///
     /// ### Guidance
     ///
     /// Each filter is applied in the order of declaration. Filters are lazy and short-circuiting:
     /// enclosing filters **never** reassess buffers that are already excluded by upstream filters.
-    /// Users are advised to declare more restrictive filters early to reduce the result set quickly
-    /// and minimise work for subsequent filters.
-    ///
-    /// ### Implementation
-    ///
-    /// Every chain begins from a [data source](Src) that borrows the candidate buffer set. Every
-    /// adapter is [monomorphized][2] against the concrete item type. No [`IO`](io) is executed
-    /// until a terminal method is called e.g. [`read`](Adapter::read) or [`iter`](Adapter::iter).
-    ///
-    /// Refer to the [source trait documentation](Source) for more details.
+    /// Users are advised to declare more restrictive filters upstream to reduce the result set
+    /// quickly and minimise work for downstream filters.
     ///
     /// [1]: iter::Adapter
-    /// [2]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
-    pub trait Resolve<'q>: Deref<Target = Src<'q>> {
+    /// [2]: crate::dataset::Dataset
+    pub trait Resolve<'d>: Deref<Target = Src<'d>> {
         /// The [item filter chain](iter::Adapter) returned by [`resolve`](Resolve::resolve).
         type Ok;
 
