@@ -1204,10 +1204,10 @@ mod tests {
         assert!(matches!(error, Outcome::Error(..)));
     }
 
-    /// [`resolve`](Resolve::resolve) drops every [`Exclude`](Outcome::Exclude) and surfaces every
+    /// [`included`](Squash::included) drops every [`Exclude`](Outcome::Exclude) and surfaces every
     /// [`Error`](Outcome::Error) as [`Err`], preserving the order of the surviving items.
     #[test]
-    fn resolve_reduces_an_outcome_stream() {
+    fn resolution_yields_the_included_items_in_order() {
         let stream = [
             Outcome::Exclude(1u32), // leading exclusions never reach the caller
             Outcome::Include(2),
@@ -1217,22 +1217,41 @@ mod tests {
             Outcome::Include(5),
             Outcome::Exclude(6), // a trailing exclusion exhausts the stream
         ];
-        let items: Vec<Result<u32, Error>> = stream.into_iter().resolve().collect();
+        let items: Vec<Result<u32, Error>> = stream.into_iter().included().collect();
         assert_eq!(items.len(), 3); // four of the seven slots were excluded
         assert!(matches!(items[0], Ok(2)));
         assert!(matches!(items[1], Err(Error::Utf8)));
         assert!(matches!(items[2], Ok(5)));
     }
 
+    /// [`excluded`](Squash::excluded) is the mirror: it drops every [`Include`](Outcome::Include)
+    /// and surfaces the same [`Error`](Outcome::Error) entries, so the two partition the stream.
+    #[test]
+    fn exclusion_yields_the_rejected_items_in_order() {
+        let stream = [
+            Outcome::Exclude(1u32),
+            Outcome::Include(2), // an inclusion never reaches the caller
+            Outcome::Error(Error::Utf8),
+            Outcome::Include(3),
+            Outcome::Exclude(4),
+        ];
+        let items: Vec<Result<u32, Error>> = stream.into_iter().excluded().collect();
+        assert_eq!(items.len(), 3); // two of the five slots were included
+        assert!(matches!(items[0], Ok(1)));
+        assert!(matches!(items[1], Err(Error::Utf8)));
+        assert!(matches!(items[2], Ok(4)));
+    }
+
     /// A stream of nothing but [`Exclude`](Outcome::Exclude) yields no items rather than looping.
     #[test]
-    fn resolve_drains_a_wholly_excluded_stream() {
+    fn resolution_drains_a_wholly_excluded_stream() {
         let stream = [Outcome::Exclude(1u32), Outcome::Exclude(2)];
-        assert_eq!(stream.into_iter().resolve().count(), usize::MIN);
+        let count = stream.into_iter().included().count();
+        assert_eq!(count, usize::MIN);
     }
 
     /// [`Evaluate`] tests a plain item against its own operand; an [`Option`] defers to its inner
-    /// operand and excludes an absent [`None`], which carries no operand to test.
+    /// operand and rejects an absent [`None`], which carries no operand to test.
     #[test]
     fn evaluate_projects_the_operand() {
         let plain_in = 7u32.evaluate(|op| *op == 7);
@@ -1240,13 +1259,25 @@ mod tests {
         let some_in = Some(7u32).evaluate(|op: &u32| *op == 7);
         let some_out = Some(7u32).evaluate(|op: &u32| *op == 8);
         let absent = None::<u32>.evaluate(|op: &u32| *op == 7);
-        assert!(matches!(plain_in, Outcome::Include(7)));
-        assert!(matches!(plain_out, Outcome::Exclude(7)));
-        assert!(matches!(some_in, Outcome::Include(Some(7))));
-        assert!(matches!(some_out, Outcome::Exclude(Some(7))));
-        assert!(matches!(absent, Outcome::Exclude(None)));
+        assert!(plain_in && some_in);
+        assert!(!(plain_out || some_out || absent));
     }
 
+    /// [`keep`](Outcome::keep) wraps the [`Evaluate`] verdict; every other outcome passes through
+    /// untouched, so an item a preceding filter rejected is never re-included.
+    #[test]
+    fn keep_wraps_the_verdict_and_passes_other_outcomes_through() {
+        let included = Outcome::Include(7u32).keep(|op: &u32| *op == 7);
+        let rejected = Outcome::Include(7u32).keep(|op: &u32| *op == 8);
+        let excluded = Outcome::Exclude(7u32).keep(|op: &u32| *op == 7);
+        let absent = Outcome::<u32>::Absent.keep(|op: &u32| *op == 7);
+        assert!(matches!(included, Outcome::Include(7)));
+        assert!(matches!(rejected, Outcome::Exclude(7)));
+        assert!(matches!(excluded, Outcome::Exclude(7)));
+        assert!(matches!(absent, Outcome::Absent));
+    }
+
+    /// A failing predicate becomes [`Error`](Outcome::Error), reported through the same channel as
     /// [`IsOption`] reports structural presence for the `is_some` / `is_none` gate.
     #[test]
     fn is_option_reports_presence() {
