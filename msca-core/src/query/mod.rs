@@ -1002,7 +1002,7 @@ where
 ///
 /// [1]: bitvec::ptr::BitPtr
 /// [2]: crate::segment::Segment
-pub(crate) trait Exclude<'q>: Source<'q> + Sized {
+pub(crate) trait Exclude<'d>: Source<'d> + Sized {
     /// An [excluder](Exclude) method that applies a fallible [filter](Fn) to each [`Buffer`]
     /// descriptor without [detailed](Buffer::Detailed) variant exclusion using statistics.
     ///
@@ -1052,7 +1052,7 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
     fn with_min_max<I, F, O>(&self, mask: &mut BitBox, filter: F, op: O) -> Result<usize, io::Error>
     where
         Self::Item: Evaluate<I>,
-        I: for<'de> Deserialize<'de, Ok = I> + 'q,
+        I: for<'de> Deserialize<'de, Ok = I> + 'd,
         F: Fn(&I) -> bool,
         O: Fn(&I, &I) -> bool,
     {
@@ -1074,7 +1074,7 @@ pub(crate) trait Exclude<'q>: Source<'q> + Sized {
 
 /* ---------------------------------------------------------------- Exclude Trait Implementation */
 
-impl<'q, S> Exclude<'q> for S where S: Source<'q> + Sized {}
+impl<'d, S> Exclude<'d> for S where S: Source<'d> + Sized {}
 
 /* ------------------------------------------------------------------------ Buffer Filter Module */
 
@@ -1142,10 +1142,10 @@ pub mod mask {
 
     /* ------------------------------------------------------------ Resolve Trait Implementation */
 
-    impl<'q, I> Resolve<'q> for Column<'q, I>
+    impl<'d, I> Resolve<'d> for Column<'d, I>
     where
-        I: Read + Clone + 'q,
-        I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
+        I: Read + Clone + 'd,
+        I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
     {
         type Ok = Self;
 
@@ -1158,14 +1158,14 @@ pub mod mask {
         }
     }
 
-    impl<'q, S, F, I> Resolve<'q> for Filter<'q, S, F, I>
+    impl<'d, S, F, I> Resolve<'d> for Filter<'d, S, F, I>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: Evaluate<I>,
-        F: Fn(&I) -> bool + 'q,
-        I: 'q,
+        F: Fn(&I) -> bool + 'd,
+        I: 'd,
     {
-        type Ok = Filter<'q, S::Ok, F, I>;
+        type Ok = Filter<'d, S::Ok, F, I>;
 
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
             let Filter { source, filter, phantom } = self;
@@ -1175,14 +1175,14 @@ pub mod mask {
         }
     }
 
-    impl<'q, S, B, I> Resolve<'q> for Range<'q, S, B, I>
+    impl<'d, S, B, I> Resolve<'d> for Range<'d, S, B, I>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: Evaluate<I>,
-        B: RangeBounds<I> + 'q,
-        I: for<'de> Deserialize<'de, Ok = I> + PartialOrd + 'q,
+        B: RangeBounds<I> + 'd,
+        I: for<'de> Deserialize<'de, Ok = I> + PartialOrd + 'd,
     {
-        type Ok = Range<'q, S::Ok, B, I>;
+        type Ok = Range<'d, S::Ok, B, I>;
 
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
             let Range { source, bounds, phantom } = self;
@@ -1196,13 +1196,13 @@ pub mod mask {
         }
     }
 
-    impl<'q, S, I> Resolve<'q> for BitMatch<'q, S, I>
+    impl<'d, S, I> Resolve<'d> for BitMatch<'d, S, I>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: Evaluate<I>,
-        I: for<'de> Deserialize<'de, Ok = I> + schema::BitMatch + PartialOrd + 'q,
+        I: for<'de> Deserialize<'de, Ok = I> + schema::BitMatch + PartialOrd + 'd,
     {
-        type Ok = BitMatch<'q, S::Ok, I>;
+        type Ok = BitMatch<'d, S::Ok, I>;
 
         /// A buffer whose recorded span excludes the candidate can hold no match.
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
@@ -1217,13 +1217,13 @@ pub mod mask {
         }
     }
 
-    impl<'q, S, I> Resolve<'q> for OneOf<'q, S, I>
+    impl<'d, S, I> Resolve<'d> for OneOf<'d, S, I>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: Evaluate<I>,
-        I: for<'de> Deserialize<'de, Ok = I> + schema::BitMatch + PartialOrd + 'q,
+        I: for<'de> Deserialize<'de, Ok = I> + schema::BitMatch + PartialOrd + 'd,
     {
-        type Ok = OneOf<'q, S::Ok, I>;
+        type Ok = OneOf<'d, S::Ok, I>;
 
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
             let OneOf { source, items, phantom } = self;
@@ -1237,13 +1237,13 @@ pub mod mask {
         }
     }
 
-    impl<'q, S, I> Resolve<'q> for OneOfSorted<'q, S, I>
+    impl<'d, S, I> Resolve<'d> for OneOfSorted<'d, S, I>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: Evaluate<I>,
-        I: for<'de> Deserialize<'de, Ok = I> + Ord + 'q,
+        I: for<'de> Deserialize<'de, Ok = I> + Ord + 'd,
     {
-        type Ok = OneOfSorted<'q, S::Ok, I>;
+        type Ok = OneOfSorted<'d, S::Ok, I>;
 
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
             let OneOfSorted { source, items, phantom } = self;
@@ -1257,13 +1257,13 @@ pub mod mask {
         }
     }
 
-    impl<'q, S, I> Resolve<'q> for OneOfSet<'q, S, I>
+    impl<'d, S, I> Resolve<'d> for OneOfSet<'d, S, I>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: Evaluate<I>,
-        I: for<'de> Deserialize<'de, Ok = I> + Eq + Hash + PartialOrd + 'q,
+        I: for<'de> Deserialize<'de, Ok = I> + Eq + Hash + PartialOrd + 'd,
     {
-        type Ok = OneOfSet<'q, S::Ok, I>;
+        type Ok = OneOfSet<'d, S::Ok, I>;
 
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
             let OneOfSet { source, items, phantom } = self;
@@ -1276,11 +1276,11 @@ pub mod mask {
             Ok(OneOfSet { source, items, phantom })
         }
     }
-    impl<'q, S, K> Resolve<'q> for SemiJoin<'q, S, K>
+    impl<'d, S, K> Resolve<'d> for SemiJoin<'d, S, K>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: Evaluate<K::Item>,
-        K: Adapter<'q>,
+        K: Adapter<'d>,
         K::Item: for<'de> Deserialize<'de, Ok = K::Item> + Ord,
     {
         type Ok = iter::SemiJoin<S::Ok, K::Item>;
@@ -1297,11 +1297,11 @@ pub mod mask {
         }
     }
 
-    impl<'q, S, K> Resolve<'q> for AntiJoin<'q, S, K>
+    impl<'d, S, K> Resolve<'d> for AntiJoin<'d, S, K>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: Evaluate<K::Item>,
-        K: Adapter<'q>,
+        K: Adapter<'d>,
         K::Item: Ord,
     {
         type Ok = iter::AntiJoin<S::Ok, K::Item>;
@@ -1315,13 +1315,13 @@ pub mod mask {
         }
     }
 
-    impl<'q, S, I> Resolve<'q> for IsSome<'q, S, I>
+    impl<'d, S, I> Resolve<'d> for IsSome<'d, S, I>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: IsOption<Item = I> + Evaluate<S::Item>,
         I: Read,
     {
-        type Ok = IsSome<'q, S::Ok, I>;
+        type Ok = IsSome<'d, S::Ok, I>;
 
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
             let source = self.source.resolve(mask)?;
@@ -1330,12 +1330,12 @@ pub mod mask {
         }
     }
 
-    impl<'q, S> Resolve<'q> for IsNone<'q, S>
+    impl<'d, S> Resolve<'d> for IsNone<'d, S>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
         S::Item: IsOption + Evaluate<S::Item>,
     {
-        type Ok = IsNone<'q, S::Ok>;
+        type Ok = IsNone<'d, S::Ok>;
 
         fn resolve(self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
             let source = self.source.resolve(mask)?;
@@ -1344,9 +1344,9 @@ pub mod mask {
         }
     }
 
-    impl<'q, S> Resolve<'q> for Skip<'q, S>
+    impl<'d, S> Resolve<'d> for Skip<'d, S>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
     {
         type Ok = iter::Skip<S::Ok>;
 
@@ -1377,9 +1377,9 @@ pub mod mask {
         }
     }
 
-    impl<'q, S> Resolve<'q> for Take<'q, S>
+    impl<'d, S> Resolve<'d> for Take<'d, S>
     where
-        S: Adapter<'q>,
+        S: Adapter<'d>,
     {
         type Ok = iter::Take<S::Ok>;
 
@@ -1416,10 +1416,10 @@ pub mod mask {
         }
     }
 
-    impl<'q, A, B> Resolve<'q> for Conjunct<A, B>
+    impl<'d, A, B> Resolve<'d> for Conjunct<A, B>
     where
-        A: Resolve<'q>,
-        B: Resolve<'q>,
+        A: Resolve<'d>,
+        B: Resolve<'d>,
     {
         type Ok = Conjunct<A::Ok, B::Ok>;
 
@@ -1430,10 +1430,10 @@ pub mod mask {
         }
     }
 
-    impl<'q, A, B> Resolve<'q> for Disjunct<A, B>
+    impl<'d, A, B> Resolve<'d> for Disjunct<A, B>
     where
-        A: Resolve<'q>,
-        B: Resolve<'q>,
+        A: Resolve<'d>,
+        B: Resolve<'d>,
     {
         type Ok = Disjunct<A::Ok, B::Ok>;
 
@@ -1447,10 +1447,10 @@ pub mod mask {
         }
     }
 
-    impl<'q, A, B> Resolve<'q> for Adjunct<A, B>
+    impl<'d, A, B> Resolve<'d> for Adjunct<A, B>
     where
-        A: Resolve<'q>,
-        B: Resolve<'q>,
+        A: Resolve<'d>,
+        B: Resolve<'d>,
     {
         type Ok = Adjunct<A::Ok, B::Ok>;
 
