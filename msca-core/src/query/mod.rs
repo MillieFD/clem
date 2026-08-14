@@ -1530,6 +1530,148 @@ pub mod mask {
         }
     }
 
+    /// The [resolved][1] form of [`mask`]`::`[`SemiJoin`](mask::SemiJoin) that yields
+    /// [deserialized](Deserialize) items from `S` that are also present in the [`keys`][2] set.
+    ///
+    /// [1]: mask::Resolve::resolve
+    /// [2]: BTreeSet
+    #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+    pub struct SemiJoin<S, I>
+    where
+        I: Ord,
+    {
+        /// The [resolved][1] data [`Source`] that yields [deserialized](Deserialize) items.
+        ///
+        /// [1]: mask::Resolve::resolve
+        pub(super) source: S,
+        /// Ordered distinct items to include from `S`.
+        pub(super) keys: BTreeSet<I>,
+    }
+
+    impl<S, I> Deref for SemiJoin<S, I>
+    where
+        S: Deref,
+        I: Ord,
+    {
+        type Target = <S as Deref>::Target;
+
+        fn deref(&self) -> &Self::Target {
+            &self.source
+        }
+    }
+
+    impl<'d, S, I> Source<'d> for SemiJoin<S, I>
+    where
+        S: Source<'d>,
+        I: Ord,
+    {
+        type Item = S::Item;
+    }
+
+    /// The [resolved][1] form of [`mask`]`::`[`AntiJoin`](mask::AntiJoin) that yields
+    /// [deserialized](Deserialize) items from `S` that are **not** present in the [`keys`][2] set.
+    ///
+    /// [1]: mask::Resolve::resolve
+    /// [2]: BTreeSet
+    #[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+    pub struct AntiJoin<S, I>
+    where
+        I: Ord,
+    {
+        /// The [resolved][1] data [`Source`] that yields [deserialized](Deserialize) items.
+        ///
+        /// [1]: mask::Resolve::resolve
+        pub(super) source: S,
+        /// Ordered distinct items to exclude from `S`.
+        pub(super) keys: BTreeSet<I>,
+    }
+
+    impl<S, I> Deref for AntiJoin<S, I>
+    where
+        S: Deref,
+        I: Ord,
+    {
+        type Target = <S as Deref>::Target;
+
+        fn deref(&self) -> &Self::Target {
+            &self.source
+        }
+    }
+
+    impl<'d, S, I> Source<'d> for AntiJoin<S, I>
+    where
+        S: Source<'d>,
+        I: Ord,
+    {
+        type Item = S::Item;
+    }
+
+    /// The [resolved][1] form of [`mask`]`::`[`Skip`](mask::Skip) that skips the first `n` items.
+    ///
+    /// [1]: mask::Resolve::resolve
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+    pub struct Skip<S> {
+        /// The [resolved][1] data [`Source`] that yields [deserialized](Deserialize) items.
+        ///
+        /// [1]: mask::Resolve::resolve
+        pub(super) source: S,
+        /// Index of the [`Buffer`] holding the first retained item.
+        pub(super) buffer: usize,
+        /// Index of the first retained item within the first retained [`Buffer`].
+        pub(super) origin: usize,
+    }
+
+    impl<S> Deref for Skip<S>
+    where
+        S: Deref,
+    {
+        type Target = <S as Deref>::Target;
+
+        fn deref(&self) -> &Self::Target {
+            &self.source
+        }
+    }
+
+    impl<'d, S> Source<'d> for Skip<S>
+    where
+        S: Source<'d>,
+    {
+        type Item = S::Item;
+    }
+
+    /// The [resolved][1] form of [`mask`]`::`[`Take`](mask::Take) that reads at most `n` items.
+    ///
+    /// [1]: mask::Resolve::resolve
+    #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+    pub struct Take<S> {
+        /// The [resolved][1] data [`Source`] that yields [deserialized](Deserialize) items.
+        ///
+        /// [1]: mask::Resolve::resolve
+        pub(super) source: S,
+        /// Index of the [`Buffer`] holding the last retained item.
+        pub(super) limit: usize,
+        /// The number of items to [`take`](super::Adapter::take) from the last retained [`Buffer`].
+        pub(super) keep: usize,
+    }
+
+    impl<S> Deref for Take<S>
+    where
+        S: Deref,
+    {
+        type Target = <S as Deref>::Target;
+
+        fn deref(&self) -> &Self::Target {
+            &self.source
+        }
+    }
+
+    impl<'d, S> Source<'d> for Take<S>
+    where
+        S: Source<'d>,
+    {
+        type Item = S::Item;
+    }
+
     /* ----------------------------------------------------------------------------------- Tests */
 
     #[cfg(test)]
