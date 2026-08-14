@@ -349,8 +349,7 @@ impl<'a> Reader<'a, bool> for &'a BitSlice<u8, Lsb0> {
 
 impl<'a, I> Reader<'a, Option<I>> for OptBitVec<'a, I>
 where
-    I: Read + 'a,
-    I::Src<'a>: Reader<'a, I>,
+    I: Read<'a> + 'a,
 {
     fn iter(self) -> Result<impl Iterator<Item = Result<Option<I>, Error>> + 'a, Error> {
         let mut mask = self.mask.iter().by_vals();
@@ -454,8 +453,7 @@ impl<'a> Reader<'a, Option<String>> for Seq<'a> {
 
 impl<'a, I> Reader<'a, Vec<I>> for Seq<'a>
 where
-    I: Read + 'a,
-    I::Src<'a>: Deserialize<'a, Ok = I::Src<'a>> + Reader<'a, I>,
+    I: Read<'a> + 'a,
 {
     fn iter(self) -> Result<impl Iterator<Item = Result<Vec<I>, Error>> + 'a, Error> {
         let (mut ends, mut start) = (self.ends, usize::MIN);
@@ -474,8 +472,7 @@ where
 
 impl<'a, I> Reader<'a, Option<Vec<I>>> for Seq<'a>
 where
-    I: Read + 'a,
-    I::Src<'a>: Deserialize<'a, Ok = I::Src<'a>> + Reader<'a, I>,
+    I: Read<'a> + 'a,
 {
     fn iter(self) -> Result<impl Iterator<Item = Result<Option<Vec<I>>, Error>> + 'a, Error> {
         let (mut ends, mut start) = (self.ends, usize::MIN);
