@@ -194,7 +194,7 @@ impl<'de> Deserialize<'de> for Manifest {
 pub struct Schema {
     /// Location of the [`Schema`] segment.
     #[n(0)]
-    pub sector: Sector,
+    pub(crate) sector: Sector,
     /// [`Column`] descriptors keyed by name.
     ///
     /// The [`BTreeMap`] guarantees a stable deterministic column order for consistent binary
