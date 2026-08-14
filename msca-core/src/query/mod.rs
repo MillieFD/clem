@@ -100,7 +100,7 @@ impl<'m> Query<'m> {
         I: Unfiltered<'q> + Eq + Hash + 'q,
     {
         let iter = self.iter::<I>()?;
-        Self::intern(iter)
+        Self::intern(iter).map_err(Error::from)
     }
 
     /// Intern each **distinct** item from the provided set and map to the corresponding index of
