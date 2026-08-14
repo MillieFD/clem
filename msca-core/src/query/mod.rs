@@ -59,26 +59,23 @@ use crate::schema::{self, Schema, Type, Unfolder, number};
 /// A composable query interface to [read](Read) data from any [msca](crate) file; initialised from
 /// [`Dataset::query`][1] and executed lazily when [`iter`](Self::iter) is polled.
 ///
-/// [`Query`] also provides a [column](Adapter) factory for the specified [`Schema`].
+/// [`Query`] also provides a [column](Adapter) factory for the specified [`Schema`]. The query
+/// lifetime `'d` is tied to the underlying [`Dataset`](crate::Dataset).
 ///
 /// Refer to the [module-level documentation](self) for implementation details.
 ///
 /// [1]: crate::Dataset::query
-#[derive(Clone, Debug)]
-pub struct Query<'m> {
+#[derive(Clone, Copy, Debug)]
+pub struct Query<'d> {
     /// Read-only [memory map](Mmap) backed by the immutable segment region.
     ///
     /// Refer to the [safety documentation](io::File::mmap) for details.
-    pub(crate) mmap: Arc<Mmap>,
-    /// On-disk [`Column`][1] descriptors borrowed from the [manifest] and keyed by name.
+    pub(crate) mmap: &'d Mmap,
+    /// On-disk [`Schema`][1] borrowed from the [manifest] with [columns][2] keyed by name.
     ///
-    /// [`BTreeMap`] guarantees a deterministic column order for consistent [serialisation][2] and
-    /// [`Schema`] comparison.
-    ///
-    /// [1]: manifest::Column
-    /// [2]: crate::accumulate::Serialize
-    // NOTE: borrowed entries are zero-copy; owned map can remove entries without breaking manifest
-    pub(crate) columns: BTreeMap<&'m str, &'m manifest::Column>,
+    /// [1]: manifest::Schema
+    /// [2]: manifest::Column
+    pub schema: &'d manifest::Schema,
 }
 
 impl<'m> Query<'m> {
