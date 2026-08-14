@@ -357,23 +357,23 @@ impl<'d> Src<'d> {
 ///
 /// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Column<'q, I> {
+pub struct Column<'d, I> {
     /// The on-disk source this column reads from.
-    src: Src<'q>,
+    src: Src<'d>,
     /// Zero-sized type-state for the requested [`item`](I) type.
     item: PhantomData<I>,
 }
 
-impl<'q, I> From<Src<'q>> for Column<'q, I> {
-    fn from(src: Src<'q>) -> Self {
+impl<'d, I> From<Src<'d>> for Column<'d, I> {
+    fn from(src: Src<'d>) -> Self {
         Self { src, item: PhantomData }
     }
 }
 
-impl<'q, I> Deref for Column<'q, I> {
-    type Target = Src<'q>;
+impl<'d, I> Deref for Column<'d, I> {
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.src
     }
 }
@@ -393,9 +393,9 @@ impl<'q, I> Deref for Column<'q, I> {
 ///
 /// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct Filter<'q, S, F, I>
+pub struct Filter<'d, S, F, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     F: Fn(&I) -> bool,
 {
     /// The wrapped data source which yields [deserialized](Deserialize) items for the
@@ -403,18 +403,20 @@ where
     source: S,
     /// The [`filter`](filter::Filter::filter) used to assess each [deserialized](Deserialize) item.
     filter: F,
-    /// Zero-sized **marker** carrying the item type and [`Query`] lifetime.
-    phantom: PhantomData<&'q I>,
+    /// Zero-sized **marker** carrying the item type and [`Dataset`][1] lifetime.
+    ///
+    /// [1]: crate::dataset::Dataset
+    phantom: PhantomData<&'d I>,
 }
 
-impl<'q, S, F, I> Deref for Filter<'q, S, F, I>
+impl<'d, S, F, I> Deref for Filter<'d, S, F, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     F: Fn(&I) -> bool,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
@@ -425,27 +427,29 @@ where
 /// [2]: RangeBounds
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 // NOTE: this struct is used for both "mask" and "iter" adapter chains
-pub struct Range<'q, S, B, I>
+pub struct Range<'d, S, B, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     B: RangeBounds<I>,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
     /// The [range](RangeBounds) of items to retain.
     bounds: B,
-    /// Zero-sized **marker** carrying the item type and [`Query`] lifetime.
-    phantom: PhantomData<&'q I>,
+    /// Zero-sized **marker** carrying the item type and [`Dataset`][1] lifetime.
+    ///
+    /// [1]: crate::dataset::Dataset
+    phantom: PhantomData<&'d I>,
 }
 
-impl<'q, S, B, I> Deref for Range<'q, S, B, I>
+impl<'d, S, B, I> Deref for Range<'d, S, B, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     B: RangeBounds<I>,
 {
-    type Target = Src<'q>;
+    type Target = Src<'d>;
 
-    fn deref(&self) -> &Src<'q> {
+    fn deref(&self) -> &Src<'d> {
         &self.source
     }
 }
@@ -455,9 +459,9 @@ where
 /// [1]: manifest::Column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 // NOTE: this struct is used for both "mask" and "iter" adapter chains
-pub struct BitMatch<'q, S, I>
+pub struct BitMatch<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: schema::BitMatch,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
@@ -465,7 +469,7 @@ where
     /// The target against which each [deserialized](Deserialize) item is [assessed](BitMatch).
     item: I,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'q Mmap>,
+    phantom: PhantomData<&'d Mmap>,
 }
 
 impl<'q, S, I> Deref for BitMatch<'q, S, I>
