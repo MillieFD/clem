@@ -1785,37 +1785,30 @@ pub mod iter {
 #[derive(Debug)]
 #[non_exhaustive] // accommodate potential future error cases
 pub enum Error {
-    /// The requested [`Column`] name was not found in the query [`BTreeMap`].
+    /// The requested [`Column`](manifest::Column) name was not found in the [`Schema`].
     Column {
-        /// The requested [`Column`] name.
+        /// The requested [`Column`](manifest::Column) name.
         name: String,
     },
     /// Underlying [`io::Error`] from the [msca](crate) file.
     Io(io::Error),
     /// Underlying [`number::Error`] from a numerical operation or conversion.
     Number(number::Error),
-    /// The requested [`Type`] did not match the actual on-disk [`Column`] type.
+    /// The requested [`Type`] did not match the actual on-disk [`Column`](manifest::Column) type.
     Type {
         /// The [`Type`] expected by the caller.
         expect: Type,
         /// The actual on-disk column [`Type`].
         actual: Type,
     },
-    /// Attempted to combine two handles that do not share one parent [`Query`].
+    /// Attempted to combine two [columns](manifest::Column) from different [schemas](Schema).
     ///
-    /// A combination reconciles a single buffer selection across both legs, so [`and`](Join::and),
-    /// [`or`](Join::or) and [`xor`](Join::xor) require both legs to read the same memory map and
-    /// expose the same [`Schema`].
+    /// Column [combination](Combine) reconciles a single buffer [mask] across two nodes from the
+    /// same [`Schema`]. Use [`semi_join`][1] or [`anti_join`][2] to combine across different
+    /// schemas or across different [datasets](crate::dataset::Dataset).
     ///
-    /// ### Guidance
-    ///
-    /// Use [`semi_join`](filter::Filter::semi_join) or [`anti_join`](filter::Filter::anti_join) to
-    /// filter a [`Column`] against a column of a separate query, which may belong to another
-    /// [`Dataset`](crate::Dataset) entirely. The other column is drained once to a sorted key set
-    /// rather than reconstructed, so the result carries the filtered column alone and no
-    /// cross-schema item is rebuilt.
-    ///
-    /// Refer to the [module-level documentation](self) for more details.
+    /// [1]: filter::Filter::semi_join
+    /// [2]: filter::Filter::anti_join
     Join,
 }
 
@@ -1826,7 +1819,7 @@ impl Display for Error {
             Self::Io(e) => write!(f, "Query IO error → {e}"),
             Self::Number(e) => write!(f, "Number error → {e}"),
             Self::Type { expect, actual } => write!(f, "Type error → {expect} ≠ {actual}"),
-            Self::Join => write!(f, "Join error → handles from different queries"),
+            Self::Join => write!(f, "Join error → cannot combine across different schemas"),
         }
     }
 }
