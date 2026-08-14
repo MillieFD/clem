@@ -1721,26 +1721,26 @@ pub mod iter {
 
         /// Drain a decoded buffer into an owned [`Vec`].
         fn drained(buffer: &Buffer, mmap: &Mmap) -> Result<Vec<u32>, Error> {
-            Src::new(iter::once(buffer), mmap).iter::<u32>()?.collect()
+            Src::new(iter::once(buffer), mmap).into_iter::<u32, &[u8]>().collect()
         }
 
         /* -------------------------------------------------------------------------- Unit Tests */
 
-        /// [`iter`](Src::iter) yields every item of a [`Basic`](Buffer::Basic) buffer,
+        /// [`iter`](Src::into_iter) yields every item of a [`Basic`](Buffer::Basic) buffer,
         /// truncated to the recorded `count`.
         #[test]
-        fn decode_streams_standard_buffer() {
+        fn decode_reads_standard_buffer() {
             let bytes = vec![10u32, 20, 30].serialize().expect("Serialize failed");
             let mmap = map(&bytes);
             let buffer = Buffer::Basic {
                 buffer: sector(bytes.len()),
                 count: NonZeroU64::new(3).expect("Zero rows"),
             };
-            let items = drained(&buffer, &mmap).expect("Stream failed");
+            let items = drained(&buffer, &mmap).expect("Decode failed");
             assert_eq!(items, [10, 20, 30]);
         }
 
-        /// [`iter`](Src::iter) resolves the single item of a [`Compact`](Buffer::Compact)
+        /// [`iter`](Src::into_iter) resolves the single item of a [`Compact`](Buffer::Compact)
         /// buffer exactly once and repeats it `count` times.
         #[test]
         fn decode_repeats_compact_item() {
@@ -1750,12 +1750,12 @@ pub mod iter {
                 buffer: sector(bytes.len()),
                 count: NonZeroU64::new(3).expect("Zero rows"),
             };
-            let items = drained(&buffer, &mmap).expect("Stream failed");
+            let items = drained(&buffer, &mmap).expect("Decode failed");
             assert_eq!(items, [7, 7, 7]);
         }
 
-        /// A sector extending beyond the memory map surfaces **eagerly** from stream construction
-        /// rather than mid-iteration; no item is ever yielded.
+        /// A sector extending beyond the memory map surfaces as the sole item the buffer yields,
+        /// in place of the items it could not decode.
         #[test]
         fn decode_rejects_out_of_bounds_sector() {
             let mmap = map(&[u8::MIN; 8]);
