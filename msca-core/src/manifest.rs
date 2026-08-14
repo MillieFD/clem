@@ -544,7 +544,7 @@ where
 mod tests {
     use std::ops::Not;
 
-    use memmap2::MmapMut;
+    use memmap2::{Mmap, MmapMut};
 
     use super::*;
 
