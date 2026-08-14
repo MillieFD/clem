@@ -36,13 +36,12 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 #![doc = include_str!("../../../doc/query-filters.md")]
 #![doc = include_str!("../../../doc/query-columns.md")]
 
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::{self, Display};
 use std::hash::Hash;
 use std::marker::PhantomData;
 use std::num::TryFromIntError;
 use std::ops::{Deref, RangeBounds};
-use std::sync::Arc;
 
 use bitvec::boxed::BitBox;
 use bitvec::vec::BitVec;
@@ -52,7 +51,7 @@ use xxhash_rust::xxh3::Xxh3Builder;
 
 use crate::io::{self, Deserialize, Deserializer};
 use crate::manifest::{self, Buffer};
-use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Resolve, Unfiltered};
+use crate::read::{Composite, Evaluate, IsOption, Outcome, Read, Reader, Squash, Unfiltered};
 use crate::schema::{self, Schema, Type, Unfolder, number};
 
 /* ------------------------------------------------------------------------------ Public Exports */
