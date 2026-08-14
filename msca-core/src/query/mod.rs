@@ -823,6 +823,12 @@ where
 /// the filter order; declare more restrictive filters early to reduce the result set quickly and
 /// minimise work for subsequent filters.
 ///
+/// ### Lifetime
+///
+/// This trait carries a `'d` lifetime from the underlying [`Dataset`][1] to ensure no item outlives
+/// the on-disk bytes from which it was deserialized. This design enables zero-copy reads. [`Clone`]
+/// the item to outlive `'d`.
+///
 /// ### Implementation
 ///
 /// Each filter from the [`Adapter`] trait wraps the data source in a [buffer adapter](mask) that
@@ -860,117 +866,117 @@ where
 /// query lifecycle. This trait is **not** implemented by [combined](Combine) adapters which join
 /// multiple columns.
 ///
-pub trait Source<'q>: Deref<Target = Src<'q>>
 /// [1]: crate::dataset::Dataset
 /// [2]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
 /// [3]: Outcome::exclude
+pub trait Source<'d>: Deref<Target = Src<'d>>
 where
-    <Self::Item as Read>::Src<'q>: Deserialize<'q, Ok = <Self::Item as Read>::Src<'q>>,
-    <Self::Item as Read>::Src<'q>: Reader<'q, Self::Item>,
+    <Self::Item as Read>::Src<'d>: Deserialize<'d, Ok = <Self::Item as Read>::Src<'d>>,
+    <Self::Item as Read>::Src<'d>: Reader<'d, Self::Item>,
 {
     /// The [deserialized](Deserialize) item type [read](Read) by the chain.
-    type Item: Read + 'q;
+    type Item: Read + 'd;
 }
 
 /* ----------------------------------------------------------------- Source Trait Implementation */
 
-impl<'q, I> Source<'q> for Column<'q, I>
+impl<'d, I> Source<'d> for Column<'d, I>
 where
-    I: Read + Clone + 'q,
-    I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
+    I: Read + Clone + 'd,
+    I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
 {
     type Item = I;
 }
 
-impl<'q, S, F, I> Source<'q> for Filter<'q, S, F, I>
+impl<'d, S, F, I> Source<'d> for Filter<'d, S, F, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     F: Fn(&I) -> bool,
 {
     type Item = S::Item;
 }
 
-impl<'q, S, B, I> Source<'q> for Range<'q, S, B, I>
+impl<'d, S, B, I> Source<'d> for Range<'d, S, B, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     B: RangeBounds<I>,
 {
     type Item = S::Item;
 }
 
-impl<'q, S, I> Source<'q> for BitMatch<'q, S, I>
+impl<'d, S, I> Source<'d> for BitMatch<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: schema::BitMatch,
 {
     type Item = S::Item;
 }
 
-impl<'q, S, I> Source<'q> for OneOf<'q, S, I>
+impl<'d, S, I> Source<'d> for OneOf<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: schema::BitMatch,
 {
     type Item = S::Item;
 }
 
-impl<'q, S, I> Source<'q> for OneOfSorted<'q, S, I>
+impl<'d, S, I> Source<'d> for OneOfSorted<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: Ord,
 {
     type Item = S::Item;
 }
 
-impl<'q, S, I> Source<'q> for OneOfSet<'q, S, I>
+impl<'d, S, I> Source<'d> for OneOfSet<'d, S, I>
 where
-    S: Source<'q>,
+    S: Source<'d>,
     I: Eq + Hash,
 {
     type Item = S::Item;
 }
-impl<'q, S, I> Source<'q> for IsSome<'q, S, I>
+impl<'d, S, I> Source<'d> for IsSome<'d, S, I>
 where
-    S: Source<'q>,
-    I: Read + Clone + 'q,
-    I::Src<'q>: Deserialize<'q, Ok = I::Src<'q>> + Reader<'q, I>,
+    S: Source<'d>,
+    I: Read + Clone + 'd,
+    I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
 {
     type Item = I;
 }
 
-impl<'q, S> Source<'q> for IsNone<'q, S>
+impl<'d, S> Source<'d> for IsNone<'d, S>
 where
-    S: Source<'q>,
+    S: Source<'d>,
 {
     type Item = S::Item;
 }
 
-impl<'q, S> Source<'q> for Skip<'q, S>
+impl<'d, S> Source<'d> for Skip<'d, S>
 where
-    S: Adapter<'q>,
+    S: Adapter<'d>,
 {
     type Item = S::Item;
 }
 
-impl<'q, S> Source<'q> for Take<'q, S>
+impl<'d, S> Source<'d> for Take<'d, S>
 where
-    S: Adapter<'q>,
+    S: Adapter<'d>,
 {
     type Item = S::Item;
 }
 
-impl<'q, S, K> Source<'q> for SemiJoin<'q, S, K>
+impl<'d, S, K> Source<'d> for SemiJoin<'d, S, K>
 where
-    S: Adapter<'q>,
-    K: Adapter<'q>,
+    S: Adapter<'d>,
+    K: Adapter<'d>,
 {
     type Item = S::Item;
 }
 
-impl<'q, S, K> Source<'q> for AntiJoin<'q, S, K>
+impl<'d, S, K> Source<'d> for AntiJoin<'d, S, K>
 where
-    S: Adapter<'q>,
-    K: Adapter<'q>,
+    S: Adapter<'d>,
+    K: Adapter<'d>,
 {
     type Item = S::Item;
 }
