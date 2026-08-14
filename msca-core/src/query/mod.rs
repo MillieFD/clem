@@ -472,6 +472,18 @@ where
     phantom: PhantomData<&'d Mmap>,
 }
 
+impl<'d, S, I> Deref for BitMatch<'d, S, I>
+where
+    S: Source<'d>,
+    I: schema::BitMatch,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
 impl<'q, S, I> Deref for BitMatch<'q, S, I>
 where
     S: Source<'q>,
