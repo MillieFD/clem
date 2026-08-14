@@ -205,7 +205,7 @@ impl Dataset {
     {
         let mut acc = self.schema::<I>(name).await?;
         let query = self.query(name)?;
-        let mut map = query.indexed::<I, N>()?;
+        let mut map = query.into_hash_map::<I, N>()?;
         let count = query.count(); // initial number of items (includes duplicates)
         let mut next = N::try_from(count).ok();
         let items = items.into_iter();
