@@ -250,19 +250,20 @@ where
     }
 }
 
-/* -------------------------------------------------------------------- Resolve Trait Definition */
+/* --------------------------------------------------------------------- Squash Trait Definition */
 
-/// Resolve any [`Outcome`] stream into a simplified [`Result`] stream that polls the underlying
+/// Squash any [`Outcome`] stream into a simplified [`Result`] stream that polls the underlying
 /// [`Iterator`] until the next [included](Outcome::Include) item is found.
 ///
 /// Surfaces [`IO`](io) and [deserialisation](Deserialize) errors lazily and discards
 /// [excluded](Outcome::Exclude) items.
-pub(crate) trait Resolve<I>: Iterator<Item = Outcome<I>> + Sized {
+pub trait Squash<I>: IntoIterator<Item = Outcome<I>> + Sized {
     /// Returns a lazy [`Iterator`] over the [included](Outcome::Include) items **only**.
-    fn resolve(mut self) -> impl Iterator<Item = Result<I, Error>> {
+    fn included(self) -> impl Iterator<Item = Result<I, Error>> {
+        let mut iter = self.into_iter();
         iter::from_fn(move || {
             loop {
-                match self.next()? {
+                match iter.next()? {
                     Outcome::Include(item) => return Ok(item).into(),
                     Outcome::Error(error) => return Err(error).into(),
                     Outcome::Exclude(..) => continue, // retry the underlying iterator
@@ -271,11 +272,26 @@ pub(crate) trait Resolve<I>: Iterator<Item = Outcome<I>> + Sized {
             }
         })
     }
+
+    /// Returns a lazy [`Iterator`] over the [excluded](Outcome::Exclude) items **only**.
+    fn excluded(self) -> impl Iterator<Item = Result<I, Error>> {
+        let mut iter = self.into_iter();
+        iter::from_fn(move || {
+            loop {
+                match iter.next()? {
+                    Outcome::Exclude(item) => return Ok(item).into(),
+                    Outcome::Error(error) => return Err(error).into(),
+                    Outcome::Include(..) => continue, // retry the underlying iterator
+                    Outcome::Absent => continue,
+                }
+            }
+        })
+    }
 }
 
-/* ---------------------------------------------------------------- Resolve Trait Implementation */
+/* ----------------------------------------------------------------- Squash Trait Implementation */
 
-impl<S, I> Resolve<I> for S where S: Iterator<Item = Outcome<I>> {}
+impl<S, I> Squash<I> for S where S: Iterator<Item = Outcome<I>> {}
 
 /* --------------------------------------------------------------------- Reader Trait Definition */
 
