@@ -825,33 +825,45 @@ where
 ///
 /// ### Implementation
 ///
-/// This trait carries a `'q` lifetime from the parent [`Query`] to ensure no item outlives the file
-/// from which it was [deserialized](Deserialize). This design enables zero-copy reads. [`Clone`]
-/// the item to outlive `'q`.
+/// Each filter from the [`Adapter`] trait wraps the data source in a [buffer adapter](mask) that
+/// captures the necessary state to assess whole buffers and individual items. Successive filters
+/// therefore construct a nested adapter chain. Terminal methods e.g. [`Adapter::read`] lazily
+/// [resolve](mask::Resolve) the whole chain into an [item adapter](iter) chain of the same shape.
+/// The query is read in two phases:
 ///
-/// ##### Mask Adapters Before IO
+/// ##### Phase 1: Mask Adapters Before IO
 ///
-/// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. Each
-/// filter wraps the chain in a lazy adapter that captures the necessary state to assess whole
-/// buffers. Every adapter is [monomorphized][1] against the concrete item type. No [`IO`](io) is
-/// executed until a terminal method is called e.g. [`read`][2] or [`iter`][3].
+/// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. The
+/// terminal method builds a [mask](Exclude) that initially includes every candidate buffer. This
+/// mask is passed along the chain, with each adapter assessing surviving buffers against a filter
+/// to exclude candidates that are provably disjoint from the requested results set. Every adapter
+/// is [monomorphized][2] against the concrete item type.
 ///
-/// ##### Item Adapters During IO
+/// Refer to the [mask adapter module documentation](mask) for more information.
 ///
-/// The buffer filter chain is [resolved][4] into an item filter [`Iterator`] chain of the same
-/// shape. The innermost [data source](iter::Src) deserializes items from **only** the surviving
-/// buffers. Enclosing adapters test the item and yield an [`Outcome`], immediately short-circuiting
-/// once the item is [excluded](Outcome::exclude).
+/// ##### Phase 2: Item Adapters During IO
+///
+/// The finalised mask is consumed by the [underlying data source](Src) to yield an [`Iterator`]
+/// that lazily deserializes items from **only** the retained buffers. Enclosing adapters test the
+/// item and yield an [`Outcome`], immediately short-circuiting once the item is [excluded][3].
+///
+/// Refer to the [item filter module documentation](iter) for the decoding rules.
+///
+/// ### Guidance
+///
+/// Each filter is applied in the order of declaration. Filters are lazy and short-circuiting:
+/// enclosing filters **never** reassess buffers that are already excluded by upstream filters.
+/// Users are advised to declare more restrictive filters upstream to reduce the result set quickly
+/// and minimise work for downstream filters.
 ///
 /// This trait is implemented by single-column **mask** and **item** adapters in both phases of the
 /// query lifecycle. This trait is **not** implemented by [combined](Combine) adapters which join
 /// multiple columns.
 ///
-/// [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
-/// [2]: Adapter::read
-/// [3]: Adapter::iter
-/// [4]: mask::Resolve::resolve
 pub trait Source<'q>: Deref<Target = Src<'q>>
+/// [1]: crate::dataset::Dataset
+/// [2]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
+/// [3]: Outcome::exclude
 where
     <Self::Item as Read>::Src<'q>: Deserialize<'q, Ok = <Self::Item as Read>::Src<'q>>,
     <Self::Item as Read>::Src<'q>: Reader<'q, Self::Item>,
