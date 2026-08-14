@@ -1114,7 +1114,7 @@ pub trait Unfiltered<'q>: Read<Src<'q>: Iterator<Item = Outcome<Self>>> + Sized 
 /// Column types are verified against the on-disk schema **exactly once**; enabling subsequent
 /// iteration and reconstruction to progress fearlessly without additional runtime overhead.
 #[doc(hidden)] // Reachable through the #[derive(Read)] macro; not intended as a stable API
-pub trait Composite<'q, S>: Sized {
+pub trait Composite<'d, S>: Sized {
     /// The reader assembling [`Self`] from one stream per column.
     type Reader: Iterator<Item = Outcome<Self>>;
 
