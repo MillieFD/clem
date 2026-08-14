@@ -696,64 +696,6 @@ where
     }
 }
 
-/// A [column][1] [adapter](Adapter) retaining only items from `S` that are also present in `K`.
-///
-/// [1]: manifest::Column
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct SemiJoin<'d, S, K>
-where
-    S: Adapter<'d>,
-    K: Adapter<'d>,
-{
-    /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
-    source: S,
-    /// The data [`Source`] that yields [deserialized](Deserialize) items to include from `S`.
-    keys: K,
-    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'d Mmap>,
-}
-
-impl<'d, S, K> Deref for SemiJoin<'d, S, K>
-where
-    S: Adapter<'d>,
-    K: Adapter<'d>,
-{
-    type Target = Src<'d>;
-
-    fn deref(&self) -> &Src<'d> {
-        &self.source
-    }
-}
-
-/// A [column][1] [adapter](Adapter) retaining only items from `S` that are **not** present in `K`.
-///
-/// [1]: manifest::Column
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
-pub struct AntiJoin<'d, S, K>
-where
-    S: Adapter<'d>,
-    K: Adapter<'d>,
-{
-    /// The data [`Source`] that yields [deserialized](Deserialize) items restricted by `K`.
-    source: S,
-    /// The data [`Source`] that yields [deserialized](Deserialize) items to exclude from `S`.
-    keys: K,
-    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
-    phantom: PhantomData<&'d Mmap>,
-}
-
-impl<'d, S, K> Deref for AntiJoin<'d, S, K>
-where
-    S: Adapter<'d>,
-    K: Adapter<'d>,
-{
-    type Target = Src<'d>;
-
-    fn deref(&self) -> &Src<'d> {
-        &self.source
-    }
-}
-
 /* --------------------------------------------------------------------- Source Trait Definition */
 
 /// A [data source](Src) or [adapter chain](Adapter) over one [`Column`](manifest::Column) that
