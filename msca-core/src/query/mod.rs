@@ -484,18 +484,23 @@ where
     }
 }
 
-impl<'q, S, I> Deref for BitMatch<'q, S, I>
+/// A [column](manifest::Column) [adapter](Adapter) that retains **only** items [matching](BitMatch)
+/// at least one candidate from a [collection](std::collections).
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct OneOf<'d, S, I>
 where
-    S: Source<'q>,
-    F: filter::BoundedFilter<I>,
+    S: Source<'d>,
+    I: schema::BitMatch,
 {
     /// The wrapped data [`Source`] which yields [deserialized](Deserialize) items.
     source: S,
-    /// The [bounded filter](filter::BoundedFilter) used to assess each [`Buffer`] and
-    /// [deserialized](Deserialize) item.
-    filter: F,
-    /// Zero-sized **marker** carrying the operand type and [`Query`] lifetime.
-    item: PhantomData<&'q I>,
+    /// Immutable [slice][1] over the **unsorted** candidate item [collection](std::collections).
+    ///
+    /// [1]: https://doc.rust-lang.org/book/ch04-03-slices.html
+    items: Box<[I]>,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    phantom: PhantomData<&'d Mmap>,
 }
 
 impl<'q, S, I> Deref for OneOf<'q, S, I>
