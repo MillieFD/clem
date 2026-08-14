@@ -18,12 +18,10 @@ use std::num::NonZeroU64;
 use std::ops::RangeBounds;
 
 use funty::Fundamental;
-use memmap2::Mmap;
 use minicbor::{CborLen, Decode, Encode};
 use smol::io::{AsyncRead, AsyncReadExt, AsyncSeek};
 
 use crate::io::{Checksum, Deserializer, Register};
-use crate::read::{Read, Reader};
 use crate::schema::{self, Type, Unfolder, number};
 use crate::segment::{Header, Segment, Variant};
 use crate::{Deserialize, Sector, Serialize, io, query};
