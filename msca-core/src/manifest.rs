@@ -276,14 +276,6 @@ impl Column {
     pub(crate) fn count(&self) -> u64 {
         self.buffers.iter().map(Buffer::count).sum()
     }
-
-    /// The number of on-disk [buffers](Buffer) written for this [`Column`], one per data segment.
-    ///
-    /// Distinct from [`count`](Self::count), which sums the **logical** items those buffers hold;
-    /// a [`Compact`](Buffer::Compact) buffer contributes one to this and its full run to that.
-    pub(crate) fn size(&self) -> usize {
-        self.buffers.len()
-    }
 }
 
 impl PartialEq for Column {
