@@ -1015,7 +1015,7 @@ where
     ///
     /// The filter has no input – and therefore cannot be executed – if the option is [`None`]. An
     /// absent item carries no operand and therefore cannot satisfy the predicate. Untested items
-    /// are **excluded** by default. Use [`Column::is_none`][1] to include these items.
+    /// are **excluded** by default. Use [`IsNone::is_none`][1] to include these items.
     ///
     /// Refer to the [trait documentation](Evaluate) for more details.
     ///
