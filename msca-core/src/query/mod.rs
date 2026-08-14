@@ -256,15 +256,12 @@ impl<'d> Query<'d> {
     }
 }
 
-impl<'m> PartialEq for Query<'m> {
-    /// Returns `true` if two queries:
-    ///
-    /// 1. Read the same memory map [`Arc`] pointer.
-    /// 2. Expose the same [`Schema`].
+impl<'d> PartialEq for Query<'d> {
+    /// Returns `true` if two queries read the same [`Schema`](manifest::Schema).
     ///
     /// Read the [trait documentation](PartialEq) for more details.
     fn eq(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.mmap, &other.mmap) && self.columns == other.columns
+        std::ptr::eq(self.schema, other.schema)
     }
 }
 
