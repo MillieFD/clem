@@ -1056,16 +1056,16 @@ pub trait IsOption {
 impl<I> IsOption for Option<I> {
     type Item = I;
 
-    fn item(self) -> Option<I> {
-        self
-    }
-
     fn is_some(&self) -> bool {
         self.is_some()
     }
 
     fn is_none(&self) -> bool {
         self.is_none()
+    }
+
+    fn item(self) -> Option<I> {
+        self
     }
 }
 
