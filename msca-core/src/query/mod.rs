@@ -1107,10 +1107,10 @@ pub mod mask {
     /// Users are advised to declare more restrictive filters upstream to reduce the result set
     /// quickly and minimise work for downstream filters.
     ///
-    /// [1]: iter::Adapter
+    /// [1]: iter::Resolve
     /// [2]: crate::dataset::Dataset
     pub trait Resolve<'d>: Deref<Target = Src<'d>> {
-        /// The [item filter chain](iter::Adapter) returned by [`resolve`](Resolve::resolve).
+        /// The [item filter chain](iter::Resolve) returned by [`resolve`](Resolve::resolve).
         type Ok;
 
         /// [Excludes](Exclude) candidate buffers from the [mask](BitBox) before consuming
@@ -1129,8 +1129,7 @@ pub mod mask {
 
     impl<'d, I> Resolve<'d> for Column<'d, I>
     where
-        I: Read + Clone + 'd,
-        I::Src<'d>: Deserialize<'d, Ok = I::Src<'d>> + Reader<'d, I>,
+        I: Read<'d> + Clone + 'd,
     {
         type Ok = Self;
 
@@ -1304,7 +1303,7 @@ pub mod mask {
     where
         S: Adapter<'d>,
         S::Item: IsOption<Item = I> + Evaluate<S::Item>,
-        I: Read,
+        I: Read<'d>,
     {
         type Ok = IsSome<'d, S::Ok, I>;
 
@@ -1370,7 +1369,7 @@ pub mod mask {
 
         fn resolve(mut self, mask: &mut BitBox) -> Result<Self::Ok, io::Error> {
             let source = self.source.resolve(mask)?;
-            let origin = iter::Adapter::origin(&source, mask);
+            let origin = iter::Resolve::origin(&source, mask);
             self.take = self.take.saturating_add(origin);
             let (limit, keep) = mask
                 .iter()
