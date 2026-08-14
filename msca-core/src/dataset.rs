@@ -310,7 +310,7 @@ mod tests {
     use super::*;
     use crate::io::{File, SizedBuf};
     use crate::manifest::Error::{Collision, NotFound};
-    use crate::query::Column;
+    use crate::query::Adapter;
     use crate::schema::{self, Type, number};
     use crate::segment::Variant;
     use crate::{Bin, Columns, Describe, Serialize, accumulate};
