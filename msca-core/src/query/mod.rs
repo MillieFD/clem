@@ -278,7 +278,7 @@ pub struct Src<'d> {
 }
 
 impl<'d> Src<'d> {
-    /// Returns a new [mask](Exclude) that includes every [`Buffer`] for this column.
+    /// Returns a new [mask] that includes every [`Buffer`] for this column.
     ///
     /// `Buffer` inclusion is determined using a positional mask where the `n`th bit corresponds
     /// to the `n`th buffer from the `n`th data segment.
@@ -309,8 +309,7 @@ impl<'d> Src<'d> {
         })
     }
 
-    /// Returns **only** the [`Buffer`] descriptors included by the [mask](Exclude) in [`Sector`][1]
-    /// order.
+    /// Returns **only** the [`Buffer`] descriptors included by the [mask] in [`Sector`][1] order.
     ///
     /// [1]: io::Sector
     // NOTE: owned slice can outlive the mask; Box prevents resize allocations at the type level
@@ -715,10 +714,10 @@ where
 /// ##### Phase 1: Mask Adapters Before IO
 ///
 /// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. The
-/// terminal method builds a [mask](Exclude) that initially includes every candidate buffer. This
-/// mask is passed along the chain, with each adapter assessing surviving buffers against a filter
-/// to exclude candidates that are provably disjoint from the requested results set. Every adapter
-/// is [monomorphized][2] against the concrete item type.
+/// terminal method builds a [mask] that initially includes every candidate buffer. This mask is
+/// passed along the chain, with each adapter assessing surviving buffers against a filter to
+/// exclude candidates that are provably disjoint from the requested results set. Every adapter is
+/// [monomorphized][2] against the concrete item type.
 ///
 /// Refer to the [mask adapter module documentation](mask) for more information.
 ///
@@ -941,9 +940,9 @@ pub mod mask {
     //! Each [`filter`] is applied subtractively to reduce the mask.
     //!
     //! Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. The
-    //! terminal method builds a [mask](Exclude) that initially includes every candidate buffer. This
-    //! mask is passed along the chain, with each adapter assessing surviving buffers against a filter
-    //! to exclude candidates that are provably disjoint from the requested results set. Every adapter
+    //! terminal method builds a [mask] that initially includes every candidate buffer. This mask is
+    //! passed along the chain, with each adapter assessing surviving buffers against a filter to
+    //! exclude candidates that are provably disjoint from the requested results set. Every adapter
     //! is [monomorphized][2] against the concrete item type.
     //!
     //! Refer to the [query lifecycle documentation](Source) for more informations.
@@ -1109,8 +1108,8 @@ pub mod mask {
 
     /* ---------------------------------------------------------------- Resolve Trait Definition */
 
-    /// A [buffer](Buffer) [filter](Filter) chain that reduces the candidate buffer [mask](Exclude)
-    /// before [resolving](Resolve::resolve) into an [item filter chain][1] of the same shape.
+    /// A [buffer](Buffer) [filter](Filter) chain that reduces the candidate buffer [mask] before
+    /// [resolving](Resolve::resolve) into an [item filter chain][1] of the same shape.
     ///
     /// ### Lifetime
     ///
