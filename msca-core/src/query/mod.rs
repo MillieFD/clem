@@ -921,6 +921,35 @@ impl<'d, S> Exclude<'d> for S where S: Source<'d> + Sized {}
 /* ------------------------------------------------------------------------ Buffer Filter Module */
 
 pub mod mask {
+    //! The **buffer mask adapter chain** evaluated during file [`IO`](io).
+    //!
+    //! Each adapter tests whole buffers – rather than individual items – and excludes candidates
+    //! that are provably disjoint from the requested results set.
+    //!
+    //! ### Implementation
+    //!
+    //! [`Buffer`] inclusion is described using a positional [mask](BitBox) where the `n`th [bit][1]
+    //! corresponds to the `n`th buffer from the `n`th data [segment][2].
+    //!
+    //! ```text
+    //! buffers   [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
+    //! mask        1    0    1    1    0      Mutable owned bitmask.
+    //!             ▼         ▼    ▼
+    //! read        A         C    D           Buffers B and E are never read.
+    //! ```
+    //!
+    //! Each [`filter`] is applied subtractively to reduce the mask.
+    //!
+    //! Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. The
+    //! terminal method builds a [mask](Exclude) that initially includes every candidate buffer. This
+    //! mask is passed along the chain, with each adapter assessing surviving buffers against a filter
+    //! to exclude candidates that are provably disjoint from the requested results set. Every adapter
+    //! is [monomorphized][2] against the concrete item type.
+    //!
+    //! Refer to the [query lifecycle documentation](Source) for more informations.
+    //!
+    //! [1]: bitvec::ptr::BitPtr
+    //! [2]: crate::segment::Segment
 
     use std::marker::PhantomData;
     use std::ops::{Deref, Not};
