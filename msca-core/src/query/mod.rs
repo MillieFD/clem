@@ -1163,6 +1163,284 @@ pub mod iter {
         type Item = S::Item;
     }
 
+    /* ---------------------------------------------------------------- Resolve Trait Definition */
+
+    /// A node in the [item iterator chain](self) that captures the necessary state to construct an
+    /// item [`Iterator`] of the same shape.
+    ///
+    /// ### Lifetime
+    ///
+    /// This trait carries a `'d` lifetime from the [`Dataset`][2] to ensure that no item outlives the
+    /// file from which it was [deserialized](Deserialize). This design enables zero-copy reads.
+    /// [`Clone`] the item to outlive `'d`.
+    ///
+    /// ### Implementation
+    ///
+    /// The **item iterator chain** is constructed from a [buffer mask adapter chain](mask) of the
+    /// same shape. Each [`filter`] wraps the [data source](Source) in an adapter. Successive
+    /// filters therefore construct a nested adapter chain. Terminal methods e.g. [`Adapter::read`]
+    /// convert the whole chain into an iterator that is evaluated lazily during file [`IO`](io).
+    /// This trait determines the **item adapter → iterator** state transition.
+    ///
+    /// Refer to the [`Source`] trait documentation for the whole query lifecycle.
+    pub trait Resolve<'d>: Source<'d> {
+        /// The index of the first retained item within the first retained [`Column`].
+        fn origin(&self, mask: &BitBox) -> usize;
+
+        /// Consume [`self`](Self) and return a lazy [`Iterator`].
+        fn read(self, m: BitBox) -> Result<impl Iterator<Item = Outcome<Self::Item>> + 'd, Error>;
+    }
+
+    /* ------------------------------------------------------------ Resolve Trait Implementation */
+
+    impl<'d, I> Resolve<'d> for Column<'d, I>
+    where
+        I: Clone + Read<'d> + 'd,
+    {
+        #[allow(unused_variables, reason = "iter::Src includes all items")]
+        fn origin(&self, mask: &BitBox) -> usize {
+            usize::MIN
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<I>> + 'd, Error> {
+            let buffers = self.retained(&mask);
+            let items = Src::new(buffers, self.query.mmap).into_iter().map(Outcome::from);
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, F, I> Resolve<'d> for Filter<'d, S, F, I>
+    where
+        S: Resolve<'d>,
+        S::Item: Evaluate<I>,
+        F: Fn(&I) -> bool + 'd,
+        I: 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let Filter { source, filter, .. } = self;
+            let items = source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: retain only items from "source" that satisfy the filter condition
+                    filter(i)
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, B, I> Resolve<'d> for Range<'d, S, B, I>
+    where
+        S: Resolve<'d>,
+        S::Item: Evaluate<I>,
+        B: RangeBounds<I> + 'd,
+        I: PartialOrd + 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let Range { source, bounds, .. } = self;
+            let items = source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: retain only items from "source" that fall within the specified range
+                    bounds.contains(i)
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, I> Resolve<'d> for BitMatch<'d, S, I>
+    where
+        S: Resolve<'d>,
+        S::Item: Evaluate<I>,
+        I: schema::BitMatch + 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let BitMatch { source, item, .. } = self;
+            let items = source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: retain only items from "source" that are bit-identical to "item"
+                    i.eq(&item)
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, I> Resolve<'d> for OneOf<'d, S, I>
+    where
+        S: Resolve<'d>,
+        S::Item: Evaluate<I>,
+        I: schema::BitMatch + 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let OneOf { source, items, .. } = self;
+            let items = source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: O(n⋅k) scales exponentially; use binary search or hash for large sets.
+                    let same = |other: &I| i.eq(other);
+                    items.iter().any(same)
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, I> Resolve<'d> for OneOfSorted<'d, S, I>
+    where
+        S: Resolve<'d>,
+        S::Item: Evaluate<I>,
+        I: Ord + 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let OneOfSorted { source, items, .. } = self;
+            let items = source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: binary search improves performance for sorted sets
+                    items.binary_search(i).is_ok()
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, I> Resolve<'d> for OneOfSet<'d, S, I>
+    where
+        S: Resolve<'d>,
+        S::Item: Evaluate<I>,
+        I: Eq + Hash + 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let OneOfSet { source, items, .. } = self;
+            let items = source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: hash probe improves performance for large sets
+                    items.contains(i)
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, I> Resolve<'d> for IsSome<'d, S, I>
+    where
+        S: Resolve<'d> + 'd,
+        S::Item: IsOption<Item = I> + Evaluate<S::Item>,
+        I: Read<'d> + Clone + 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<I>> + 'd, Error> {
+            let items = self.source.read(mask)?.map(Outcome::flatten);
+            Ok(items)
+        }
+    }
+
+    impl<'d, S> Resolve<'d> for IsNone<'d, S>
+    where
+        S: Resolve<'d>,
+        S::Item: IsOption + Evaluate<S::Item>,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let items = self.source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: retain only None items
+                    i.is_none()
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, I> Resolve<'d> for SemiJoin<S, I>
+    where
+        S: Resolve<'d>,
+        S::Item: Evaluate<I>,
+        I: Ord + 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let SemiJoin { source, keys } = self;
+            let items = source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: retain only items from "source" that are also present in "keys"
+                    keys.contains(i)
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S, I> Resolve<'d> for AntiJoin<S, I>
+    where
+        S: Resolve<'d>,
+        S::Item: Evaluate<I>,
+        I: Ord + 'd,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            self.source.origin(mask)
+        }
+
+        fn read(self, mask: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            let AntiJoin { source, keys } = self;
+            let items = source.read(mask)?.map(move |o| {
+                o.keep(|i| {
+                    // NOTE: retain only items from "source" that are not present in "keys"
+                    keys.contains(i).not()
+                })
+            });
+            Ok(items)
+        }
+    }
+
+    impl<'d, S> Resolve<'d> for Skip<S>
+    where
+        S: Resolve<'d>,
+    {
+        fn origin(&self, mask: &BitBox) -> usize {
+            let offset = mask
+                .get(self.buffer)
+                .map(|b| if *b { self.origin } else { usize::MIN })
+                .unwrap_or(usize::MIN);
+            self.source.origin(mask).saturating_add(offset)
+        }
+
+        fn read(self, m: BitBox) -> Result<impl Iterator<Item = Outcome<S::Item>> + 'd, Error> {
+            self.source.read(m)
+        }
+    }
+    }
     /* ----------------------------------------------------------------------------------- Tests */
 
     #[cfg(test)]
