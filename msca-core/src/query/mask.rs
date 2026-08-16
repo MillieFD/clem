@@ -8,7 +8,7 @@ Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the conditions of the LICENSE are met.
 */
 
-//! The **buffer mask adapter chain** evaluated during file [`IO`](io).
+//! The **buffer mask adapter chain** evaluated before file [`IO`](io).
 //!
 //! Each adapter tests whole buffers – rather than individual items – and excludes candidates that
 //! are provably disjoint from the requested results set.
@@ -196,12 +196,15 @@ where
 
 /* -------------------------------------------------------------------- Resolve Trait Definition */
 
-/// A [buffer](Buffer) [filter](Filter) chain that reduces the candidate buffer [mask] before
-/// [resolving](Resolve::resolve) into an [item filter chain][1] of the same shape.
+/// A node in the [buffer mask adapter chain](self) evaluated before file [`IO`](io).
+///
+/// Each adapter tests whole [buffers](Buffer) – rather than individual items – and excludes
+/// candidates that are provably disjoint from the requested results set. The buffer adapter chain
+/// [resolves](Resolve::resolve) into an [item filter chain](iter) of the same shape.
 ///
 /// ### Lifetime
 ///
-/// This trait carries a `'d` lifetime from the [`Dataset`][2] to ensure that no item outlives the
+/// This trait carries a `'d` lifetime from the [`Dataset`][1] to ensure that no item outlives the
 /// file from which it was [deserialized](Deserialize). This design enables zero-copy reads.
 /// [`Clone`] the item to outlive `'d`.
 ///
@@ -222,8 +225,7 @@ where
 /// Users are advised to declare more restrictive filters upstream to reduce the result set quickly
 /// and minimise work for downstream filters.
 ///
-/// [1]: iter::Resolve
-/// [2]: crate::dataset::Dataset
+/// [1]: crate::dataset::Dataset
 pub trait Resolve<'d>: Deref<Target = Src<'d>> {
     /// The [item filter chain](iter::Resolve) returned by [`resolve`](Resolve::resolve).
     type Ok;
