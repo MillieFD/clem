@@ -153,7 +153,6 @@ impl<'de> Deserialize<'de> for Seq<'de> {
 /// [1]: https://doc.rust-lang.org/std/option/index.html#representation
 /// [2]: crate::accumulate::OptInSitu
 /// [3]: crate::accumulate::OptBitVec
-#[doc(hidden)] // Reachable via Read::Src for optional niche readers
 pub struct OptInSitu<'a>(&'a [u8]);
 
 impl<'de> Deserialize<'de> for OptInSitu<'de> {
