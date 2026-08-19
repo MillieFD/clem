@@ -19,7 +19,7 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! portability. Arbitrary user-defined algebraic data types such as structs and enums are
 //! [unfolded](Unfold) into their primitive [components](Type).
 //!
-//! - **Leaf nodes** map to contiguous columnar data buffers by name.
+//! - **Terminal nodes** map to contiguous columnar data buffers by name.
 //! - **Internal nodes** exist purely for navigation and reconstruction.
 //!
 //! ### Unsized Types
@@ -28,8 +28,8 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! there is no guarantee that two [`Vec<T>`] contain the same number of elements. [`msca`](crate)
 //! therefore unfolds unsized types into:
 //!
-//! 1. Columnar `offsets` bufffer describing boundaries.
-//! 2. Contiguous `data` buffer encoding values.
+//! 1. Columnar `offsets` buffer describing boundaries.
+//! 2. Contiguous `data` buffer encoding items.
 //!
 //! This design ensures **O(1) random access** and avoids per-element pointer chasing. Sequential
 //! scans across the contained elements remain linear; leveraging columnar optimisations for SIMD
@@ -37,7 +37,7 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //!
 //! ```text
 //! offsets: [3, 6, 6]
-//! values:  [a, b, c, d, e, f, g, h]
+//! data:    [a, b, c, d, e, f, g, h]
 //! ```
 //!
 //! The serialized on-disk example above is deserialized into the memory representation below.
@@ -45,22 +45,22 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! elements.
 //!
 //! ```text
-//! Row 0 → values[..3] → "abc"
-//! Row 1 → values[3..6] → "def"
-//! Row 2 → values[6..6] → "" (empty)
-//! Row 3 → values[6..] → "gh"
+//! Item 0 → data[..3] → "abc"
+//! Item 1 → data[3..6] → "def"
+//! Item 2 → data[6..6] → "" (empty)
+//! Item 3 → data[6..] → "gh"
 //! ```
 //!
 //! Nested unsized types use **multiple offset layers** alongside a **single data buffer**. This
-//! composable design preserves the performance advantages associated with contiguous value storage;
+//! composable design preserves the performance advantages associated with contiguous item storage;
 //! namely predictable vectorised traversal. Scanning performance across the contiguous inner
-//! `values` buffer is unaffected by deep nesting. The inner offsets buffer is aligned in memory
+//! `data` buffer is unaffected by deep nesting. The inner offsets buffer is aligned in memory
 //! order of traversal to improve cache locality during nested iteration and reduce TLB misses.
 //!
 //! ```text
 //! inner offsets
 //! outer offsets
-//! values
+//! data
 //! ```
 //!
 //! Readers can directly query data from a named field – without reconstructing the full type – by
@@ -78,11 +78,12 @@ use minicbor::{CborLen, Decode, Encode};
 use static_assertions::{assert_eq_size, const_assert_ne};
 
 use self::number::Number;
-use crate::accumulate::{self, Accumulate, Descriptor, OptBitVec, OptInSitu};
-use crate::io::{Buffer, Checksum, Register};
+use crate::accumulate::{self, Accumulate, Descriptor, OptBitVec, OptInSitu, Serialize};
+use crate::dataset::Dataset;
+use crate::io;
+use crate::io::{Buffer, Checksum, Register, Sector};
 use crate::manifest::{self, Manifest};
 use crate::segment::{Header, Segment, Variant};
-use crate::{Dataset, Sector, Serialize, io};
 
 /// Shorthand [`OccupiedEntry`] for a [`Schema`][1] that already exists in the [`Schema`].
 ///
@@ -100,7 +101,7 @@ type Occupied<'a> = OccupiedEntry<'a, String, manifest::Schema>;
 /// while on-disk [`Data`][2] segments contain the columnar buffers.
 ///
 /// [1]: manifest::Schema
-/// [2]: crate::Data
+/// [2]: crate::item::Data
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, CborLen)]
 // NOTE: schema::Schema (public builder) ≠ manifest::Schema (private descriptor).
@@ -125,7 +126,7 @@ pub struct Schema {
 }
 
 impl Schema {
-    /// Initialises a new empty [`Schema`] with no columns.
+    /// Initialise a new empty [`Schema`] with no columns.
     pub fn new<N>(name: N) -> Self
     where
         String: From<N>,
@@ -136,11 +137,15 @@ impl Schema {
         }
     }
 
-    /// Add a [`Column`] to [`self`](Schema) with the specified `name` and [`type`](I).
+    /// Add a [`Column`] to [`self`](Schema) with the specified [`name`](String) and [`type`](Type).
     ///
     /// Returns an empty [accumulator](accumulate::Buffer) for **in-memory** data ingestion. This
     /// design ensures schema verification is performed exactly once.
-    #[doc(hidden)]
+    #[allow(
+        private_bounds,
+        private_interfaces,
+        reason = "restrict I to supported primitive types only"
+    )]
     pub fn column<I>(&mut self, name: impl Into<String>) -> Result<accumulate::Buffer<I>, Error>
     where
         I: BitMatch + Clone + Unfold + Send + Sync + 'static,
@@ -149,9 +154,8 @@ impl Schema {
         let name = name.into();
         let column = Column::new::<I, Schema>();
         match self.columns.entry(name) {
-            Entry::Vacant(entry) => entry.insert(column),
-            Entry::Occupied(entry) if entry.get() == &column => entry.into_mut(),
-            Entry::Occupied(entry) => return Error::Collision { name: entry.key().clone() }.into(),
+            Entry::Vacant(e) => e.insert(column),
+            Entry::Occupied(e) => return Error::Collision { name: e.key().clone() }.into(),
         };
         let acc = accumulate::Buffer::<I>::default();
         Ok(acc)
@@ -309,9 +313,6 @@ impl From<&Self> for Column {
 #[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, CborLen)]
 #[non_exhaustive] // To accommodate the potential future stabilisation of additional types.
 pub enum Type {
-    /// An unspecified [`Type`] that is [`equal`](Eq) to all other variants.
-    #[n(0)]
-    Any,
     /* ----------------------------------------------------------- Fixed-Size Machine Primitives */
     /// Boolean primitive which can be `true` or `false`.
     #[n(1)]
@@ -333,6 +334,7 @@ pub enum Type {
         subtype: Box<Type>,
     },
     /// Fixed size tuple wrapping an arbitrary number of subtypes.
+    // NOTE: reserved tag is not currently registered nor written to disk
     #[n(5)]
     Tuple {
         /// [`Type`] of each subtype root node. [`Vec::len`] returns the arity.
@@ -349,6 +351,18 @@ pub enum Type {
         /// [`Type`] of the subtype root node.
         #[n(0)]
         subtype: Box<Type>,
+    },
+    /* ------------------------------------------------------------------- Composite Descriptors */
+    /// An algebraic data type constructed from [`typed`](Type) fields keyed by [`name`](String).
+    ///
+    /// The variant describes composite items at runtime but is never written to disk; nested
+    /// [`Column`] layouts are flattened during [registration](Schema::column).
+    #[n(8)]
+    Struct {
+        /// Each field [`name`](String) mapped to the field [`Type`]. A [`BTreeMap`] enforces unique
+        /// names and deterministic order.
+        #[n(0)]
+        fields: BTreeMap<String, Type>,
     },
 }
 
@@ -374,37 +388,34 @@ impl Type {
     /// A [`Type::Number`] descriptor for the `i8` primitive type.
     pub const I8: Self = Self::Number(Number { kind: number::Kind::Int, size: 1 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroI128`](num::NonZeroI128) type.
+    /// A [`Number`] descriptor for the [`NonZeroI128`](num::NonZeroI128) type.
     pub const NZI128: Self = Self::Number(Number { kind: number::Kind::NonZeroInt, size: 16 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroI16`](num::NonZeroI16) type.
+    /// A [`Number`] descriptor for the [`NonZeroI16`](num::NonZeroI16) type.
     pub const NZI16: Self = Self::Number(Number { kind: number::Kind::NonZeroInt, size: 2 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroI32`](num::NonZeroI32) type.
+    /// A [`Number`] descriptor for the [`NonZeroI32`](num::NonZeroI32) type.
     pub const NZI32: Self = Self::Number(Number { kind: number::Kind::NonZeroInt, size: 4 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroI64`](num::NonZeroI64) type.
+    /// A [`Number`] descriptor for the [`NonZeroI64`](num::NonZeroI64) type.
     pub const NZI64: Self = Self::Number(Number { kind: number::Kind::NonZeroInt, size: 8 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroI8`](num::NonZeroI8) type.
+    /// A [`Number`] descriptor for the [`NonZeroI8`](num::NonZeroI8) type.
     pub const NZI8: Self = Self::Number(Number { kind: number::Kind::NonZeroInt, size: 1 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroU128`](num::NonZeroU128) type.
-    pub const NZU128: Self = Self::Number(Number {
-        kind: number::Kind::NonZeroUInt,
-        size: 16,
-    });
+    /// A [`Number`] descriptor for the [`NonZeroU128`](num::NonZeroU128) type.
+    pub const NZU128: Self = Self::Number(Number { kind: number::Kind::NonZeroUInt, size: 16});
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroU16`](num::NonZeroU16) type.
+    /// A [`Number`] descriptor for the [`NonZeroU16`](num::NonZeroU16) type.
     pub const NZU16: Self = Self::Number(Number { kind: number::Kind::NonZeroUInt, size: 2 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroU32`](num::NonZeroU32) type.
+    /// A [`Number`] descriptor for the [`NonZeroU32`](num::NonZeroU32) type.
     pub const NZU32: Self = Self::Number(Number { kind: number::Kind::NonZeroUInt, size: 4 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroU64`](num::NonZeroU64) type.
+    /// A [`Number`] descriptor for the [`NonZeroU64`] type.
     pub const NZU64: Self = Self::Number(Number { kind: number::Kind::NonZeroUInt, size: 8 });
 
-    /// A [`Number`](Number) descriptor for the [`NonZeroU8`](num::NonZeroU8) type.
+    /// A [`Number`] descriptor for the [`NonZeroU8`](num::NonZeroU8) type.
     pub const NZU8: Self = Self::Number(Number { kind: number::Kind::NonZeroUInt, size: 1 });
 
     /// A [`Type::Number`] descriptor for the `u128` primitive type.
@@ -440,9 +451,8 @@ impl Type {
 }
 
 impl Display for Type {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Self::Any => write!(f, "any"),
             Self::Bool => f.write_str("bool"),
             Self::Char => f.write_str("char"),
             Self::Number(n) => n.fmt(f),
@@ -450,6 +460,7 @@ impl Display for Type {
             Self::Tuple { .. } => f.write_str("tuple"),
             Self::String => f.write_str("String"),
             Self::Sequence { subtype } => write!(f, "Vec<{subtype}>"),
+            Self::Struct { fields } => write!(f, "Struct {{ {fields:?} }}"),
         }
     }
 }
@@ -482,14 +493,14 @@ pub mod number {
         /// Unsigned integer type.
         #[n(0)]
         UInt,
-        /// [Non-zero](num::NonZero) unsigned integer type.
+        /// [Non-zero](core::num::NonZero) unsigned integer type.
         #[n(1)]
         NonZeroUInt,
         /* ------------------------------------------------------------------------------ Signed */
         /// Signed integer type.
         #[n(2)]
         Int,
-        /// [Non-zero](num::NonZero) signed integer type.
+        /// [Non-zero](core::num::NonZero) signed integer type.
         #[n(3)]
         NonZeroInt,
         /* ---------------------------------------------------------------------- Floating Point */
@@ -499,7 +510,7 @@ pub mod number {
     }
 
     impl fmt::Display for Kind {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 Self::UInt => f.write_str("u"),
                 Self::NonZeroUInt => f.write_str("NonZeroU"),
@@ -530,7 +541,7 @@ pub mod number {
     }
 
     impl fmt::Display for Number {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             write!(f, "{}{}", self.kind, self.size * 8)
         }
     }
@@ -545,8 +556,9 @@ pub mod number {
     ///
     /// ### Implementation
     ///
-    /// This enum is `#[non_exhaustive]` meaning additional variants may be added in future versions.
-    /// Implementers are advised to include a wildcard arm `_` to account for potential additions.
+    /// This enum is `#[non_exhaustive]` meaning additional variants may be added in future
+    /// versions. Implementers matching on the enum are advised to include a fallback `other` arm to
+    /// accommodate additions.
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Debug, Clone, Eq, PartialEq)]
     #[non_exhaustive] // To accommodate potential future error cases.
@@ -558,7 +570,7 @@ pub mod number {
     }
 
     impl fmt::Display for Error {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
             match self {
                 Self::Convert(e) => write!(f, "Integer type conversion error → {e}"),
                 Self::Zero => write!(f, "Expected non-zero value was zero"),
@@ -602,7 +614,8 @@ pub mod number {
 /// ### Implementation
 ///
 /// This enum is `#[non_exhaustive]` meaning additional variants may be added in future versions.
-/// Implementers are advised to include a wildcard arm `_` to account for potential additions.
+/// Implementers matching on the enum are advised to include a fallback `other` arm to accommodate
+/// additions.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Clone, Eq, PartialEq)]
 #[non_exhaustive] // To accommodate potential future error cases.
@@ -630,7 +643,7 @@ pub enum Error {
 }
 
 impl Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Collision { name } => write!(f, "Name collision → {name}"),
             Self::NotFound => f.write_str("Column not found in this schema"),
@@ -675,7 +688,7 @@ where
 /// limitations on [`Box::new`].
 ///
 /// [1]: https://doc.rust-lang.org/book/ch03-02-data-types.html
-pub trait AsType {
+pub(crate) trait AsType {
     /// The on-disk [`Type`] used to describe [`Self`].
     const TYPE: Type;
 }
@@ -790,7 +803,7 @@ impl AsType for &str {
 
 /// Compares two items by their exact **bit pattern**.
 ///
-/// ### [BitMatch](Self) vs [PartialEq](PartialEq)
+/// ### BitMatch vs PartialEq
 ///
 /// Each equality-testing trait uses a different underlying mechanism:
 ///
@@ -986,23 +999,12 @@ where
 }
 /* --------------------------------------------------------------------- Unfold Trait Definition */
 
-/// A platform-agnostic **type** that can be unfolded into its primitive [components](Type) using
-/// an [`Unfolder`].
+/// A **platform-agnostic primitive type** that is used to record data in a [`Column`].
 ///
-/// [`Msca`](crate) provides `Unfold` implementations for many Rust primitive and standard library
-/// types. The complete list is [here](crate::schema). All of these types can be unfolded using msca
-/// out of the box. Some types are deliberately omitted to preserve cross-platform support.
-///
-/// The `msca-derive` crate provides a [`#[derive(unfold)]`][1] procedural macro to automatically
-/// generate `Unfold` implementations for structs and enums in your program. See the [user guide][2]
-/// for more details.
-///
-/// Third-party crates are encouraged to implement `Unfold` on their public types to enable seamless
-/// integration with on-disk storage.
-// TODO [1] link to procedural macro documentation
-// TODO [2] link to procedural macro user guide
-#[doc(hidden)]
-pub trait Unfold: Sized {
+/// [`MSCA`](crate) implements `Unfold` for many Rust primitive and standard library types. The
+/// complete list is available [here](crate::schema). Some types are deliberately omitted to
+/// preserve cross-platform support.
+pub(crate) trait Unfold: Sized {
     /// The [accumulator](Accumulate) type used to ingest values of [`Self`] directly.
     // NOTE: Buffer must be a growable Vec; compiler cannot predict the number of accumulated items
     type RawAcc: Accumulate<Self>
@@ -1034,9 +1036,9 @@ pub trait Unfold: Sized {
     }
 
     /// Construct an [accumulator](Self::RawAcc) containing exactly **one** [`item`](Self); used to
-    /// serialize single-value [`Buffer::Lite`][1] without repeated [`Accumulate::push`] calls.
+    /// serialize single-value [`Buffer::Compact`][1] without repeated [`Accumulate::push`] calls.
     ///
-    /// [1]: accumulate::Buffer
+    /// [1]: accumulate::Buffer::Compact
     fn once(item: &Self) -> Self::RawAcc
     where
         Self: Clone,
@@ -1221,7 +1223,7 @@ where
 
 /* ------------------------------------------------------------------- Unfolder Trait Definition */
 
-/// A **schema builder** that can unfold the supported type [`I`].
+/// A **schema builder** that can unfold the supported type `I`.
 ///
 /// `Unfolder` is implemented independently for each supported type; enabling type-driven encoding.
 /// For example, the default [`Schema`] builder unfolds `u8` into a [`Type::Number`] descriptor.
@@ -1229,7 +1231,7 @@ pub trait Unfolder<I>
 where
     I: ?Sized,
 {
-    /// Returns the [`Type`] descriptor produced by unfolding the supported [`I`].
+    /// Returns the [`Type`] descriptor produced by unfolding the supported `I`.
     fn unfold() -> Type;
 }
 
@@ -1283,20 +1285,19 @@ mod tests {
 
     /* ------------------------------------------------------------------------------ Unit Tests */
 
-    /// Reusing a [`Column`] name with an incompatible type is rejected as an [`Error::Collision`].
+    /// Reusing a [`Column`] name is **always** rejected as an [`Error::Collision`], whatever the
+    /// requested type.
+    ///
+    /// Two fields registering one column would feed that column from two accumulators, so the
+    /// items of one silently overwrite the items of the other. The same-type case is rejected for
+    /// exactly that reason; registering one schema twice is deduplicated at segment level instead.
     #[test]
-    fn column_reuse_with_new_type_collides() {
+    fn column_reuse_always_collides() {
         let mut schema = schema();
-        let clash = matches!(schema.column::<u64>("a"), Err(Error::Collision { .. }));
-        assert!(clash);
-    }
-
-    /// Adding a [`Column`] with an identical type is deduplicated rather than rejected.
-    #[test]
-    fn column_reuse_with_same_type_deduplicates() {
-        let mut schema = schema();
-        schema.column::<u32>("a").expect("Identical column rejected");
-        assert_eq!(schema.columns.len(), 1);
+        let same = schema.column::<u32>("a").expect_err("Repeated column accepted");
+        let wider = schema.column::<u64>("a").expect_err("Repeated column accepted");
+        assert!(matches!(same, Error::Collision { .. }));
+        assert!(matches!(wider, Error::Collision { .. }));
     }
 
     /// [`Type::option`] collapses a nested [`Option`] into a single validity layer.
@@ -1314,7 +1315,7 @@ mod tests {
         assert_eq!(Type::sequence(Type::U8), expect);
     }
 
-    /// Every supported type names its own [`Type`], and only those types do. `usize` and `isize`
+    /// Every supported type names a corresponding [`Type`], and only those types do. `usize` and `isize`
     /// are deliberately omitted – their width varies by platform – so neither can name a [`Type`],
     /// reach a column, or render a file non-portable.
     #[test]
