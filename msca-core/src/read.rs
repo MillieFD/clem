@@ -78,7 +78,6 @@ use crate::schema::number;
 
 /// A **stateful cursor** over paired validity and value sub-buffers for a single [`Column`]; used
 /// to [`Deserialize`] optional non-niche items.
-#[doc(hidden)] // Reachable via Read::Src for optional non-niche readers
 pub struct OptBitVec<'d, I>
 where
     I: Decode<'d>,
