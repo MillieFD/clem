@@ -62,7 +62,7 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! [3]: crate::dataset::Dataset
 //! [4]: crate::segment::Variant
 //! [5]: crate::schema::Schema
-//! [6]: crate::Data
+//! [6]: crate::item::Data
 
 use std::ops::Not;
 use std::{iter, num};
@@ -71,12 +71,11 @@ use bitvec::order::Lsb0;
 use bitvec::slice::BitSlice;
 
 use crate::io::{Deserialize, Deserializer, Error, SizedBuf};
-use crate::query;
 use crate::schema::number;
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
-/// A **stateful cursor** over paired validity and value sub-buffers for a single [`Column`]; used
+/// A **stateful cursor** over paired validity and data sub-buffers for a single [`Column`]; used
 /// to [`Deserialize`] optional non-niche items.
 pub struct OptBitVec<'d, I>
 where
@@ -108,7 +107,7 @@ where
     }
 }
 
-/// A **stateful cursor** over paired offset and value sub-buffers for a single [`Column`]; used to
+/// A **stateful cursor** over paired offset and data sub-buffers for a single [`Column`]; used to
 /// [`Deserialize`](Deserialize) [unsized][1] items.
 ///
 /// [1]: https://doc.rust-lang.org/reference/dynamically-sized-types.html
@@ -283,10 +282,10 @@ impl<'a> Decoder<'a, &'a str> for Seq<'a> {
                 let len = end.checked_sub(start).ok_or(number::Error::Zero)?;
                 data.split_at_checked(len)
                     .ok_or_else(|| Error::Truncated { expected: len, actual: data.len() })
-                    .and_then(|src| {
+                    .map(|src| {
                         data = src.1;
                         start = end;
-                        Ok(src.0)
+                        src.0
                     })
                     .map(str::from_utf8)?
                     .map_err(Error::from)
@@ -319,10 +318,10 @@ impl<'a> Decoder<'a, Option<String>> for Seq<'a> {
                 let len = end.checked_sub(start).ok_or(number::Error::Zero)?;
                 data.split_at_checked(len)
                     .ok_or_else(|| Error::Truncated { expected: len, actual: data.len() })
-                    .and_then(|src| {
+                    .map(|src| {
                         data = src.1;
                         start = end;
-                        Ok(src.0)
+                        src.0
                     })
                     .map(str::from_utf8)?
                     .map(str::to_owned)
@@ -382,9 +381,12 @@ where
 ///
 /// ### Guidance
 ///
-/// Implemented for all supported primitive types. Implementors are advised to [`#derive(Read)`][1]
-/// for [`Composite`] types that [zip](Iterator::zip) one sub-stream per field.
-// [1]: TODO → add link to msca-derive crate or feature
+/// Implemented for all supported primitive types. Implementors are advised to [`#derive(Read)`][2]
+/// for [`Composite`][3] types that [zip](Iterator::zip) one sub-stream per field.
+///
+/// [1]: crate::manifest::Column
+/// [2]: crate::item::Composite
+// [3]: TODO → add link to msca-derive crate or feature
 pub trait Decode<'d>: Sized {
     /// The [stateful data source](Decoder) from which to [`Deserialize`] values of [`Self`].
     type Src: Deserialize<'d, Ok = Self::Src> + Decoder<'d, Self>;
@@ -612,16 +614,12 @@ impl<'d> Decode<'d> for &'d str {
 
 /* ------------------------------------------------------------------- Evaluate Trait Definition */
 
-/// A **deserialized item** that can be mapped to an [`Outcome`] using the provided [closure][1].
+/// A **deserialized item** that can be tested against a provided [closure][1].
 ///
 /// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
 pub trait Evaluate<I = Self>: Sized {
-    /// Assess `self` using the provided [`filter`](F) and maps:
-    ///
-    /// - `true` → [`Outcome::Include`]
-    /// - `false` → [`Outcome::Exclude`]
-    ///
-    /// Used to subtractively reduce a [query] result set.
+    /// Returns `true` if the item carried by `self` satisfies the [`filter`](F). Used to
+    /// subtractively reduce a [query](crate::query) result set.
     ///
     /// # Performance
     ///
@@ -901,7 +899,7 @@ where
     ///
     /// Refer to the [trait documentation](Evaluate) for more details.
     ///
-    /// [1]: query::filter::IsNone::is_none
+    /// [1]: crate::query::filter::IsNone::is_none
     fn evaluate<F>(&self, filter: F) -> bool
     where
         F: Fn(&I) -> bool,
@@ -928,7 +926,7 @@ pub trait IsOption {
     /// Consume the option and yield the item it carries, if any.
     ///
     /// A structural filter narrows the item type past the option, so the stream carries
-    /// [`Item`](Self::Item) and an absent slot becomes [`Outcome::Absent`].
+    /// [`Item`](Self::Item) and an absent entry becomes [`Outcome::Absent`].
     fn item(self) -> Option<Self::Item>;
 }
 
@@ -969,7 +967,7 @@ mod tests {
 
     /* ------------------------------------------------------------------------------ Unit Tests */
 
-    /// [`Seq::deserialize`] splits the composite body into its raw `ends` and `data` sub-buffers.
+    /// [`Seq::deserialize`] splits the composite body into the raw `ends` and `data` sub-buffers.
     #[test]
     fn seq_deserialize_splits_ends_and_data() {
         let mut buf = Vec::new();
@@ -981,8 +979,8 @@ mod tests {
         assert_eq!(seq.data, b"abc");
     }
 
-    /// [`OptBitVec::deserialize`] splits the composite body into its validity `mask` and value
-    /// `data` sub-buffers; the mask marks rows 0 and 2 as present.
+    /// [`OptBitVec::deserialize`] splits the composite body into the validity `mask` and the
+    /// `data` sub-buffers; the mask marks items 0 and 2 as present.
     #[test]
     fn opt_bit_vec_deserialize_splits_mask_and_data() {
         let mut buf = Vec::new();
@@ -995,7 +993,7 @@ mod tests {
         assert_eq!(opt.data, data.as_slice());
     }
 
-    /// [`OptBitVec::deserialize`] accepts the omitted value sub-buffer written by an all-[`None`]
+    /// [`OptBitVec::deserialize`] accepts the omitted data sub-buffer written by an all-[`None`]
     /// column; the exhausted source yields an empty data cursor.
     #[test]
     fn opt_bit_vec_deserialize_accepts_omitted_data() {
@@ -1007,7 +1005,7 @@ mod tests {
         assert!(opt.data.is_empty());
     }
 
-    /// [`Seq::deserialize`] accepts the omitted data sub-buffer written by an all-empty-row column;
+    /// [`Seq::deserialize`] accepts the omitted data sub-buffer written by an all-empty column;
     /// the exhausted source yields an empty data cursor.
     #[test]
     fn seq_deserialize_accepts_omitted_data() {
@@ -1019,62 +1017,7 @@ mod tests {
         assert!(seq.data.is_empty());
     }
 
-    /// [`From`] lifts a decode result onto an [`Outcome`] at the column boundary.
-    #[test]
-    fn outcome_lifts_a_decode_result() {
-        let include = Outcome::from(Ok::<u32, Error>(7));
-        let error = Outcome::from(Err::<u32, Error>(Error::Utf8));
-        assert!(matches!(include, Outcome::Include(7)));
-        assert!(matches!(error, Outcome::Error(..)));
-    }
-
-    /// [`included`](Squash::included) drops every [`Exclude`](Outcome::Exclude) and surfaces every
-    /// [`Error`](Outcome::Error) as [`Err`], preserving the order of the surviving items.
-    #[test]
-    fn resolution_yields_the_included_items_in_order() {
-        let stream = [
-            Outcome::Exclude(1u32), // leading exclusions never reach the caller
-            Outcome::Include(2),
-            Outcome::Exclude(3), // consecutive exclusions are skipped in one pull
-            Outcome::Exclude(4),
-            Outcome::Error(Error::Utf8),
-            Outcome::Include(5),
-            Outcome::Exclude(6), // a trailing exclusion exhausts the stream
-        ];
-        let items: Vec<Result<u32, Error>> = stream.into_iter().included().collect();
-        assert_eq!(items.len(), 3); // four of the seven slots were excluded
-        assert!(matches!(items[0], Ok(2)));
-        assert!(matches!(items[1], Err(Error::Utf8)));
-        assert!(matches!(items[2], Ok(5)));
-    }
-
-    /// [`excluded`](Squash::excluded) is the mirror: it drops every [`Include`](Outcome::Include)
-    /// and surfaces the same [`Error`](Outcome::Error) entries, so the two partition the stream.
-    #[test]
-    fn exclusion_yields_the_rejected_items_in_order() {
-        let stream = [
-            Outcome::Exclude(1u32),
-            Outcome::Include(2), // an inclusion never reaches the caller
-            Outcome::Error(Error::Utf8),
-            Outcome::Include(3),
-            Outcome::Exclude(4),
-        ];
-        let items: Vec<Result<u32, Error>> = stream.into_iter().excluded().collect();
-        assert_eq!(items.len(), 3); // two of the five slots were included
-        assert!(matches!(items[0], Ok(1)));
-        assert!(matches!(items[1], Err(Error::Utf8)));
-        assert!(matches!(items[2], Ok(4)));
-    }
-
-    /// A stream of nothing but [`Exclude`](Outcome::Exclude) yields no items rather than looping.
-    #[test]
-    fn resolution_drains_a_wholly_excluded_stream() {
-        let stream = [Outcome::Exclude(1u32), Outcome::Exclude(2)];
-        let count = stream.into_iter().included().count();
-        assert_eq!(count, usize::MIN);
-    }
-
-    /// [`Evaluate`] tests a plain item against its own operand; an [`Option`] defers to its inner
+    /// [`Evaluate`] tests a plain item against the item content; an [`Option`] defers to the inner
     /// operand and rejects an absent [`None`], which carries no operand to test.
     #[test]
     fn evaluate_projects_the_operand() {
@@ -1087,25 +1030,10 @@ mod tests {
         assert!(!(plain_out || some_out || absent));
     }
 
-    /// [`keep`](Outcome::keep) wraps the [`Evaluate`] verdict; every other outcome passes through
-    /// untouched, so an item a preceding filter rejected is never re-included.
-    #[test]
-    fn keep_wraps_the_verdict_and_passes_other_outcomes_through() {
-        let included = Outcome::Include(7u32).keep(|op: &u32| *op == 7);
-        let rejected = Outcome::Include(7u32).keep(|op: &u32| *op == 8);
-        let excluded = Outcome::Exclude(7u32).keep(|op: &u32| *op == 7);
-        let absent = Outcome::<u32>::Absent.keep(|op: &u32| *op == 7);
-        assert!(matches!(included, Outcome::Include(7)));
-        assert!(matches!(rejected, Outcome::Exclude(7)));
-        assert!(matches!(excluded, Outcome::Exclude(7)));
-        assert!(matches!(absent, Outcome::Absent));
-    }
-
-    /// A failing predicate becomes [`Error`](Outcome::Error), reported through the same channel as
     /// [`IsOption`] reports structural presence for the `is_some` / `is_none` gate.
     #[test]
     fn is_option_reports_presence() {
-        assert!(Some(7u32).is_some());
-        assert!(!None::<u32>.is_some());
+        assert!(IsOption::is_some(&Some(7u32)));
+        assert!(IsOption::is_none(&None::<u32>));
     }
 }
