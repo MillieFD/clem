@@ -24,7 +24,8 @@ use crate::{io, manifest, query, schema, segment};
 /// ### Implementation
 ///
 /// This enum is `#[non_exhaustive]` meaning additional variants may be added in future versions.
-/// Implementers are advised to include a wildcard arm `_` to account for potential additions.
+/// Implementers matching on the enum are advised to include a fallback `other` arm to accommodate
+/// additions.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug)]
 #[non_exhaustive] // To accommodate potential future error cases.
@@ -35,7 +36,7 @@ pub enum Error {
     Manifest(manifest::Error),
     /// Underlying [`number::Error`] from a numerical operation or conversion.
     Number(number::Error),
-    /// Underlying [`query::Error`] from [querying](query) the [`Dataset`](crate::Dataset).
+    /// Underlying [`query::Error`] from [querying](query) the [`Dataset`](crate::dataset::Dataset).
     Query(query::Error),
     /// Underlying [`schema::Error`] from schema composition.
     Schema(schema::Error),
@@ -51,7 +52,7 @@ pub enum Error {
 /* ----------------------------------------------------------------------- Trait Implementations */
 
 impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Io(io::Error::Io(e)) => write!(f, "File IO error → {e}"),
             Self::Io(e) => write!(f, "File IO error → {e}"),
@@ -77,7 +78,6 @@ impl std::error::Error for Error {
             Self::Segment(e) => Some(e),
             Self::Slice(e) => Some(e),
             Self::Utf8(e) => Some(e),
-            other => None, // Some variants do not wrap an inner error source
         }
     }
 }
@@ -170,7 +170,7 @@ impl From<segment::Error> for Error {
 
 #[cfg(test)]
 mod tests {
-    use std::io::{self, ErrorKind};
+    use std::io;
     use std::str;
 
     use super::*;
@@ -180,7 +180,7 @@ mod tests {
     /// A [`io::Error`] converts into a msca [`Error`] carrying the source message.
     #[test]
     fn std_io_error_converts_with_message() {
-        let source = io::Error::new(ErrorKind::Other, "Test IO error");
+        let source = io::Error::other("Test IO error");
         let error: Error = source.into();
         assert_eq!(error.to_string(), "File IO error → Test IO error");
     }
