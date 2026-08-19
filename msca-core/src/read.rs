@@ -915,7 +915,6 @@ where
 /// An **optional item** which can be [`Some`] or [`None`].
 ///
 /// Refer to [std::option] for more details.
-#[doc(hidden)] // pub required for filter trait bounds; not intended as a stable API
 pub trait IsOption {
     /// The item carried when the option is [`Some`].
     type Item;
