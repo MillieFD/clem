@@ -493,7 +493,7 @@ where
     }
 }
 
-/* ----------------------------------------------------------------------- Read Trait Definition */
+/* --------------------------------------------------------------------- Decode Trait Definition */
 
 /// A **data type** that can be lazily [deserialized](Deserialize) from one on-disk [`Column`][1].
 ///
@@ -502,228 +502,228 @@ where
 /// Implemented for all supported primitive types. Implementors are advised to [`#derive(Read)`][1]
 /// for [`Composite`] types that [zip](Iterator::zip) one sub-stream per field.
 // [1]: TODO → add link to msca-derive crate or feature
-pub trait Read<'d>: Sized {
-    /// The [stateful data source](Reader) from which to [`Deserialize`] values of [`Self`].
-    type Src: Deserialize<'d, Ok = Self::Src> + Reader<'d, Self>;
+pub trait Decode<'d>: Sized {
+    /// The [stateful data source](Decoder) from which to [`Deserialize`] values of [`Self`].
+    type Src: Deserialize<'d, Ok = Self::Src> + Decoder<'d, Self>;
 }
 
-/* ------------------------------------------------------------------- Read Trait Implementation */
+/* ----------------------------------------------------------------- Decode Trait Implementation */
 
-impl<'d> Read<'d> for u8 {
+impl<'d> Decode<'d> for u8 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for u16 {
+impl<'d> Decode<'d> for u16 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for u32 {
+impl<'d> Decode<'d> for u32 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for u64 {
+impl<'d> Decode<'d> for u64 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for u128 {
+impl<'d> Decode<'d> for u128 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for i8 {
+impl<'d> Decode<'d> for i8 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for i16 {
+impl<'d> Decode<'d> for i16 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for i32 {
+impl<'d> Decode<'d> for i32 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for i64 {
+impl<'d> Decode<'d> for i64 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for i128 {
+impl<'d> Decode<'d> for i128 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for f32 {
+impl<'d> Decode<'d> for f32 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for f64 {
+impl<'d> Decode<'d> for f64 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for char {
+impl<'d> Decode<'d> for char {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroU8 {
+impl<'d> Decode<'d> for num::NonZeroU8 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroU16 {
+impl<'d> Decode<'d> for num::NonZeroU16 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroU32 {
+impl<'d> Decode<'d> for num::NonZeroU32 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroU64 {
+impl<'d> Decode<'d> for num::NonZeroU64 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroU128 {
+impl<'d> Decode<'d> for num::NonZeroU128 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroI8 {
+impl<'d> Decode<'d> for num::NonZeroI8 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroI16 {
+impl<'d> Decode<'d> for num::NonZeroI16 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroI32 {
+impl<'d> Decode<'d> for num::NonZeroI32 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroI64 {
+impl<'d> Decode<'d> for num::NonZeroI64 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for num::NonZeroI128 {
+impl<'d> Decode<'d> for num::NonZeroI128 {
     type Src = &'d [u8];
 }
 
-impl<'d> Read<'d> for bool {
+impl<'d> Decode<'d> for bool {
     type Src = &'d BitSlice<u8, Lsb0>;
 }
 
-impl<'d> Read<'d> for Option<u8> {
+impl<'d> Decode<'d> for Option<u8> {
     type Src = OptBitVec<'d, u8>;
 }
 
-impl<'d> Read<'d> for Option<u16> {
+impl<'d> Decode<'d> for Option<u16> {
     type Src = OptBitVec<'d, u16>;
 }
 
-impl<'d> Read<'d> for Option<u32> {
+impl<'d> Decode<'d> for Option<u32> {
     type Src = OptBitVec<'d, u32>;
 }
 
-impl<'d> Read<'d> for Option<u64> {
+impl<'d> Decode<'d> for Option<u64> {
     type Src = OptBitVec<'d, u64>;
 }
 
-impl<'d> Read<'d> for Option<u128> {
+impl<'d> Decode<'d> for Option<u128> {
     type Src = OptBitVec<'d, u128>;
 }
 
-impl<'d> Read<'d> for Option<i8> {
+impl<'d> Decode<'d> for Option<i8> {
     type Src = OptBitVec<'d, i8>;
 }
 
-impl<'d> Read<'d> for Option<i16> {
+impl<'d> Decode<'d> for Option<i16> {
     type Src = OptBitVec<'d, i16>;
 }
 
-impl<'d> Read<'d> for Option<i32> {
+impl<'d> Decode<'d> for Option<i32> {
     type Src = OptBitVec<'d, i32>;
 }
 
-impl<'d> Read<'d> for Option<i64> {
+impl<'d> Decode<'d> for Option<i64> {
     type Src = OptBitVec<'d, i64>;
 }
 
-impl<'d> Read<'d> for Option<i128> {
+impl<'d> Decode<'d> for Option<i128> {
     type Src = OptBitVec<'d, i128>;
 }
 
-impl<'d> Read<'d> for Option<f32> {
+impl<'d> Decode<'d> for Option<f32> {
     type Src = OptBitVec<'d, f32>;
 }
 
-impl<'d> Read<'d> for Option<f64> {
+impl<'d> Decode<'d> for Option<f64> {
     type Src = OptBitVec<'d, f64>;
 }
 
-impl<'d> Read<'d> for Option<bool> {
+impl<'d> Decode<'d> for Option<bool> {
     type Src = OptBitVec<'d, bool>;
 }
 
-impl<'d> Read<'d> for Option<char> {
+impl<'d> Decode<'d> for Option<char> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroU8> {
+impl<'d> Decode<'d> for Option<num::NonZeroU8> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroU16> {
+impl<'d> Decode<'d> for Option<num::NonZeroU16> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroU32> {
+impl<'d> Decode<'d> for Option<num::NonZeroU32> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroU64> {
+impl<'d> Decode<'d> for Option<num::NonZeroU64> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroU128> {
+impl<'d> Decode<'d> for Option<num::NonZeroU128> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroI8> {
+impl<'d> Decode<'d> for Option<num::NonZeroI8> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroI16> {
+impl<'d> Decode<'d> for Option<num::NonZeroI16> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroI32> {
+impl<'d> Decode<'d> for Option<num::NonZeroI32> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroI64> {
+impl<'d> Decode<'d> for Option<num::NonZeroI64> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d> Read<'d> for Option<num::NonZeroI128> {
+impl<'d> Decode<'d> for Option<num::NonZeroI128> {
     type Src = OptInSitu<'d>;
 }
 
-impl<'d, I> Read<'d> for Vec<I>
+impl<'d, I> Decode<'d> for Vec<I>
 where
-    I: Read<'d> + 'd,
+    I: Decode<'d> + 'd,
 {
     type Src = Seq<'d>;
 }
 
-impl<'d, I> Read<'d> for Option<Vec<I>>
+impl<'d, I> Decode<'d> for Option<Vec<I>>
 where
-    I: Read<'d> + 'd,
+    I: Decode<'d> + 'd,
 {
     type Src = Seq<'d>;
 }
 
-impl<'d> Read<'d> for String {
+impl<'d> Decode<'d> for String {
     type Src = Seq<'d>;
 }
 
-impl<'d> Read<'d> for Option<String> {
+impl<'d> Decode<'d> for Option<String> {
     type Src = Seq<'d>;
 }
 
-impl<'d> Read<'d> for &'d str {
+impl<'d> Decode<'d> for &'d str {
     type Src = Seq<'d>;
 }
 
