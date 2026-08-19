@@ -112,7 +112,6 @@ where
 /// [`Deserialize`](Deserialize) [unsized][1] items.
 ///
 /// [1]: https://doc.rust-lang.org/reference/dynamically-sized-types.html
-#[doc(hidden)] // Reachable via Read::Src for unsized readers
 pub struct Seq<'a> {
     /// Byte [slice][1] over the `ends` sub-buffer yielding one `u64` cumulative end offset for each
     /// [`Some`] or [`u64::MAX`] for [`None`].
