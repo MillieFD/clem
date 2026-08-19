@@ -8,7 +8,7 @@ Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the conditions of the LICENSE are met.
 */
 
-//! Data **streaming** interface for [query] execution.
+//! Data **streaming** interface for [query](crate::query) execution.
 //!
 //! ---
 //!
