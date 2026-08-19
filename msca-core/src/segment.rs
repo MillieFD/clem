@@ -35,9 +35,9 @@ use std::num::NonZeroU64;
 use minicbor::{CborLen, Decode, Encode};
 use smol::io::{AsyncSeek, AsyncWrite, AsyncWriteExt};
 
-use crate::io::{self, Buffer, Checksum};
+use crate::accumulate::Serialize;
+use crate::io::{self, Buffer, Checksum, Sector};
 use crate::schema::number;
-use crate::{Sector, Serialize};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -103,7 +103,7 @@ mod variant {
 
     use minicbor::{CborLen, Decode, Encode};
 
-    use crate::Serialize;
+    use crate::accumulate::Serialize;
     use crate::io::Buffer;
     use crate::schema::number;
 
@@ -112,7 +112,7 @@ mod variant {
     /// On-disk **variant** identifier carried in the first byte of every segment header.
     ///
     /// Format extensibility may be achieved via the introduction of new segment variants in future
-    /// releases. Existing variants are guaranteed to retain their discriminant values for binary
+    /// releases. Existing variants are guaranteed to retain their discriminants for binary
     /// compatibility with existing files.
     ///
     /// See the [module level documentation](self) for more details.
@@ -142,7 +142,7 @@ mod variant {
     /* ------------------------------------------------------------------- Trait Implementations */
 
     impl Display for Variant {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
             match self {
                 Self::Manifest => write!(f, "Manifest"),
                 Self::Schema => write!(f, "Schema"),
@@ -192,8 +192,9 @@ mod variant {
     ///
     /// ### Implementation
     ///
-    /// This enum is `#[non_exhaustive]` meaning additional variants may be added in future versions.
-    /// Implementers are advised to include a wildcard arm `_` to account for potential additions.
+    /// This enum is `#[non_exhaustive]` meaning additional variants may be added in future
+    /// versions. Implementers matching on the enum are advised to include a fallback `other` arm to
+    /// accommodate additions.
     #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
     #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, CborLen)]
     #[non_exhaustive] // To accommodate potential future error cases.
@@ -218,7 +219,7 @@ mod variant {
     }
 
     impl Display for Error {
-        fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
             match self {
                 Error::Unexpected { found, .. } => write!(f, "Unexpected variant → 0x{found:02X}"),
                 Error::Unknown { found } => write!(f, "Unknown variant → 0x{found:02X}"),
@@ -351,7 +352,8 @@ where
 /// ### Implementation
 ///
 /// This enum is `#[non_exhaustive]` meaning additional variants may be added in future versions.
-/// Implementers are advised to include a wildcard arm `_` to account for potential additions.
+/// Implementers matching on the enum are advised to include a fallback `other` arm to accommodate
+/// additions.
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 #[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Hash, Encode, Decode, CborLen)]
 #[non_exhaustive] // To accommodate potential future error cases.
@@ -362,7 +364,7 @@ pub enum Error {
 }
 
 impl Display for Error {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
         match self {
             Self::Variant(error) => write!(f, "Segment variant ID error → {error}"),
         }
