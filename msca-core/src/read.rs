@@ -177,6 +177,19 @@ pub trait Decoder<'a, I> {
     #[rustfmt::skip] // single line where clause improves readability
     fn iter(self) -> Result<impl Iterator<Item = Result<I, Error>> + 'a, Error> where Self: Sized;
 
+    /// [`Deserialize`] exactly one item from [`self`](Self).
+    ///
+    /// ### Implementation
+    ///
+    /// The default implementation constructs a temporary [`iterator`](Self::iter) and
+    /// [pulls](Iterator::next) the **first** item. Implementation overrides are implemented for
+    /// specific stateless decoders that can deserialize one item directly.
+    ///
+    /// ### Errors
+    ///
+    /// Returns [`Error::Truncated`] if the source holds no item.
+    ///
+    /// [1]: crate::manifest::Buffer::Compact
     fn one(self) -> Result<I, Error>
     where
         Self: Sized,
@@ -602,7 +615,6 @@ impl<'d> Decode<'d> for &'d str {
 /// A **deserialized item** that can be mapped to an [`Outcome`] using the provided [closure][1].
 ///
 /// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
-#[doc(hidden)] // pub required for filter trait bounds; not intended as a stable API
 pub trait Evaluate<I = Self>: Sized {
     /// Assess `self` using the provided [`filter`](F) and maps:
     ///
