@@ -81,7 +81,7 @@ use crate::schema::number;
 #[doc(hidden)] // Reachable via Read::Src for optional non-niche readers
 pub struct OptBitVec<'d, I>
 where
-    I: Read<'d>,
+    I: Decode<'d>,
 {
     /// Byte [slice][1] over the validity sub-buffer where `true` → [`Some`] and `false` → [`None`].
     ///
@@ -94,7 +94,7 @@ where
 
 impl<'de, I> Deserialize<'de> for OptBitVec<'de, I>
 where
-    I: Read<'de>,
+    I: Decode<'de>,
     I::Src: Default,
 {
     type Ok = Self;
@@ -296,8 +296,7 @@ impl<S, I> Squash<I> for S where S: Iterator<Item = Outcome<I>> {}
 /* --------------------------------------------------------------------- Reader Trait Definition */
 
 /// A **stateful data source** used to construct a lazy deserializing [`Iterator`].
-#[doc(hidden)] // pub required for Query::column trait bounds; not intended as a stable API
-pub trait Reader<'a, I> {
+pub trait Decoder<'a, I> {
     /// Return an [`Iterator`] that lazily [deserializes](Deserialize) items from the on-disk bytes.
     ///
     /// ### Errors
@@ -315,9 +314,9 @@ pub trait Reader<'a, I> {
     }
 }
 
-/* ----------------------------------------------------------------- Reader Trait Implementation */
+/* ----------------------------------------------------------------- Decoder Trait Implementation */
 
-impl<'a, I> Reader<'a, I> for &'a [u8]
+impl<'a, I> Decoder<'a, I> for &'a [u8]
 where
     I: for<'de> Deserialize<'de, Ok = I> + 'a,
 {
@@ -335,7 +334,7 @@ where
     }
 }
 
-impl<'a> Reader<'a, bool> for &'a BitSlice<u8, Lsb0> {
+impl<'a> Decoder<'a, bool> for &'a BitSlice<u8, Lsb0> {
     fn iter(self) -> Result<impl Iterator<Item = Result<bool, Error>> + 'a, Error> {
         let iter = self.iter().by_vals().map(Ok);
         Ok(iter)
@@ -347,9 +346,9 @@ impl<'a> Reader<'a, bool> for &'a BitSlice<u8, Lsb0> {
     }
 }
 
-impl<'a, I> Reader<'a, Option<I>> for OptBitVec<'a, I>
+impl<'a, I> Decoder<'a, Option<I>> for OptBitVec<'a, I>
 where
-    I: Read<'a> + 'a,
+    I: Decode<'a> + 'a,
 {
     fn iter(self) -> Result<impl Iterator<Item = Result<Option<I>, Error>> + 'a, Error> {
         let mut mask = self.mask.iter().by_vals();
@@ -363,14 +362,14 @@ where
 
     fn one(self) -> Result<Option<I>, Error> {
         // NOTE: data sub-buffer untouched if mask is false (override improves performance)
-        match Reader::<bool>::one(self.mask)? {
+        match Decoder::<bool>::one(self.mask)? {
             true => self.data.one().map(Some),
             false => Ok(None),
         }
     }
 }
 
-impl<'a, I> Reader<'a, Option<I>> for OptInSitu<'a>
+impl<'a, I> Decoder<'a, Option<I>> for OptInSitu<'a>
 where
     I: 'a,
     Option<I>: for<'de> Deserialize<'de, Ok = Option<I>>,
@@ -390,7 +389,7 @@ where
     }
 }
 
-impl<'a> Reader<'a, &'a str> for Seq<'a> {
+impl<'a> Decoder<'a, &'a str> for Seq<'a> {
     fn iter(self) -> Result<impl Iterator<Item = Result<&'a str, Error>> + 'a, Error> {
         let (mut ends, mut data) = (self.ends, self.data);
         let mut start = usize::MIN;
@@ -413,17 +412,17 @@ impl<'a> Reader<'a, &'a str> for Seq<'a> {
     }
 }
 
-impl<'a> Reader<'a, String> for Seq<'a>
+impl<'a> Decoder<'a, String> for Seq<'a>
 where
-    Self: Reader<'a, &'a str>,
+    Self: Decoder<'a, &'a str>,
 {
     fn iter(self) -> Result<impl Iterator<Item = Result<String, Error>> + 'a, Error> {
-        let iter = Reader::<&'a str>::iter(self)?.map(|item| item.map(str::to_owned));
+        let iter = Decoder::<&'a str>::iter(self)?.map(|item| item.map(str::to_owned));
         Ok(iter)
     }
 }
 
-impl<'a> Reader<'a, Option<String>> for Seq<'a> {
+impl<'a> Decoder<'a, Option<String>> for Seq<'a> {
     fn iter(self) -> Result<impl Iterator<Item = Result<Option<String>, Error>> + 'a, Error> {
         let (mut ends, mut data) = (self.ends, self.data);
         let mut start = usize::MIN;
@@ -451,9 +450,9 @@ impl<'a> Reader<'a, Option<String>> for Seq<'a> {
     }
 }
 
-impl<'a, I> Reader<'a, Vec<I>> for Seq<'a>
+impl<'a, I> Decoder<'a, Vec<I>> for Seq<'a>
 where
-    I: Read<'a> + 'a,
+    I: Decode<'a> + 'a,
 {
     fn iter(self) -> Result<impl Iterator<Item = Result<Vec<I>, Error>> + 'a, Error> {
         let (mut ends, mut start) = (self.ends, usize::MIN);
@@ -470,9 +469,9 @@ where
     }
 }
 
-impl<'a, I> Reader<'a, Option<Vec<I>>> for Seq<'a>
+impl<'a, I> Decoder<'a, Option<Vec<I>>> for Seq<'a>
 where
-    I: Read<'a> + 'a,
+    I: Decode<'a> + 'a,
 {
     fn iter(self) -> Result<impl Iterator<Item = Result<Option<Vec<I>>, Error>> + 'a, Error> {
         let (mut ends, mut start) = (self.ends, usize::MIN);
