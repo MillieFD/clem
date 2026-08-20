@@ -961,3 +961,200 @@ where
 {
     type Item = S::Item;
 }
+
+/* ----------------------------------------------------------------- Origin Trait Implementation */
+
+impl<'d, I> Origin<'d> for Column<'d, I>
+where
+    I: Decode<'d> + Clone + 'd,
+{
+    /// Returns [`0`](usize::MIN) default. [`Column`] provides the base for the adapter chain and
+    /// includes every item from every retained [`Buffer`] by definition.
+    ///
+    /// Refer to the [trait method documentation](Origin::origin) for more information.
+    #[allow(unused_variables, reason = "a column includes every item")]
+    fn origin(&self, mask: &BitBox) -> usize {
+        usize::MIN
+    }
+}
+
+impl<'d, S, F, I> Origin<'d> for Filter<'d, S, F, I>
+where
+    S: Source<'d> + Origin<'d>,
+    F: Fn(&I) -> bool,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        self.source.origin(mask)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        self.source.quota(mask)
+    }
+}
+
+impl<'d, S, B, I> Origin<'d> for Range<'d, S, B, I>
+where
+    S: Source<'d> + Origin<'d>,
+    B: RangeBounds<I>,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        self.source.origin(mask)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        self.source.quota(mask)
+    }
+}
+
+impl<'d, S, I> Origin<'d> for BitMatch<'d, S, I>
+where
+    S: Source<'d> + Origin<'d>,
+    I: schema::BitMatch,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        self.source.origin(mask)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        self.source.quota(mask)
+    }
+}
+
+impl<'d, S, I> Origin<'d> for OneOf<'d, S, I>
+where
+    S: Source<'d> + Origin<'d>,
+    I: schema::BitMatch,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        self.source.origin(mask)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        self.source.quota(mask)
+    }
+}
+
+impl<'d, S, I> Origin<'d> for OneOfSorted<'d, S, I>
+where
+    S: Source<'d> + Origin<'d>,
+    I: Ord,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        self.source.origin(mask)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        self.source.quota(mask)
+    }
+}
+
+impl<'d, S, I> Origin<'d> for OneOfSet<'d, S, I>
+where
+    S: Source<'d> + Origin<'d>,
+    I: Eq + Hash,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        self.source.origin(mask)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        self.source.quota(mask)
+    }
+}
+
+impl<'d, S, I> Origin<'d> for IsSome<'d, S, I>
+where
+    S: Source<'d> + Origin<'d>,
+    I: Decode<'d>,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        self.source.origin(mask)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        self.source.quota(mask)
+    }
+}
+
+impl<'d, S> Origin<'d> for IsNone<'d, S>
+where
+    S: Source<'d> + Origin<'d>,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        self.source.origin(mask)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        self.source.quota(mask)
+    }
+}
+
+impl<'d, A, B> Origin<'d> for Conjunct<A, B>
+where
+    A: Origin<'d>,
+    B: Origin<'d>,
+{
+    /// Returns the index of the first retained item in the first retained [`Buffer`].
+    ///
+    /// ### Implementation
+    ///
+    /// [`Conjunct`] joins two upstream chains which may each [`Exclude`] different buffers. The
+    /// overall origin is the [`max`](Ord::max) displacement across both nodes.
+    ///
+    /// Refer to the [trait documentation](Origin) for more information.
+    fn origin(&self, mask: &BitBox) -> usize {
+        let a = self.a.origin(mask);
+        let b = self.b.origin(mask);
+        a.max(b)
+    }
+
+    /// Returns the number of retained items across every retained [`Buffer`].
+    ///
+    /// ### Implementation
+    ///
+    /// [`Conjunct`] joins two upstream chains which may each [`Exclude`] different buffers. The
+    /// overall quota is the [`min`](Ord::min) number of retained items across both nodes.
+    ///
+    /// Refer to the [trait documentation](Origin) for more information.
+    fn quota(&self, mask: &BitBox) -> usize {
+        let a = self.a.quota(mask);
+        let b = self.b.quota(mask);
+        a.min(b)
+    }
+}
+
+impl<'d, A, B> Origin<'d> for Disjunct<A, B>
+where
+    A: Origin<'d>,
+    B: Origin<'d>,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        let a = self.a.quota(mask);
+        let b = self.b.quota(mask);
+        a.min(b)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        let a = self.a.quota(mask);
+        let b = self.b.quota(mask);
+        a.min(b)
+    }
+}
+
+impl<'d, A, B> Origin<'d> for Adjunct<A, B>
+where
+    A: Origin<'d>,
+    B: Origin<'d>,
+{
+    fn origin(&self, mask: &BitBox) -> usize {
+        let a = self.a.origin(mask);
+        let b = self.b.origin(mask);
+        a.min(b)
+    }
+
+    fn quota(&self, mask: &BitBox) -> usize {
+        let a = self.a.quota(mask);
+        let b = self.b.quota(mask);
+        a.min(b)
+    }
+}
