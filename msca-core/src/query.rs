@@ -329,10 +329,10 @@ impl<'d> Src<'d> {
     where
         F: FnMut(&Buffer, &'d Mmap) -> Result<bool, io::Error>,
     {
-        mask.iter_mut().zip(self.buffers).try_fold(usize::MIN, |n, (bit, buf)| {
+        mask.iter_mut().zip(self.buffers).try_fold(usize::MIN, |mut n, (bit, buf)| {
             if *bit {
                 match test(buf, self.query.mmap)? {
-                    true => return Ok(n + 1),
+                    true => n += 1,
                     false => bit.commit(false),
                 }
             };
