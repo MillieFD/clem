@@ -579,3 +579,51 @@ where
     }
 }
 
+/// A [column](manifest::Column) [adapter](Query) that discards [`None`] items.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct IsSome<'d, S, I>
+where
+    S: Source<'d>,
+    I: Decode<'d>,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// Zero-sized **marker** carrying the flattened [`Some`] type and [`Schema`] lifetime.
+    pub(crate) phantom: PhantomData<&'d I>,
+}
+
+impl<'d, S, I> Deref for IsSome<'d, S, I>
+where
+    S: Source<'d>,
+    I: Decode<'d>,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
+/// A [column](manifest::Column) [adapter](Query) that retains only [`None`] items.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct IsNone<'d, S>
+where
+    S: Source<'d>,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S> Deref for IsNone<'d, S>
+where
+    S: Source<'d>,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
