@@ -374,3 +374,112 @@ impl<'d, I> Deref for Column<'d, I> {
         &self.src
     }
 }
+
+/* ------------------------------------------------------------------------------ Column Filters */
+
+/// A [column][1] [adapter](Query) that [evaluates][2] each [deserialized](Deserialize) item
+/// **without** [detailed](Buffer::Detailed) buffer exclusion using statistics.
+///
+/// ### Implementation
+///
+/// This adapter captures the filter operand `&I` into a [`Fn`] that is used to assess each
+/// [compact buffer](Buffer::Compact) and deserialized item. This adapter cannot use buffer
+/// statistics to exclude [detailed buffer](Buffer::Detailed) candidates.
+///
+/// Use a named adapter e.g. [`Range`] for filters that **can** assess detailed candidates.
+///
+/// [1]: manifest::Column
+/// [2]: Evaluate::evaluate
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Filter<'d, S, F, I>
+where
+    S: Source<'d>,
+    F: Fn(&I) -> bool,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// The [`filter`][1] used to assess each item after [deserialization](Deserialize).
+    ///
+    /// [1]: crate::filter::Filter::filter
+    pub(crate) filter: F,
+    /// Zero-sized **marker** carrying the item type and [`Dataset`][1] lifetime.
+    ///
+    /// [1]: crate::dataset::Dataset
+    pub(crate) phantom: PhantomData<&'d I>,
+}
+
+impl<'d, S, F, I> Deref for Filter<'d, S, F, I>
+where
+    S: Source<'d>,
+    F: Fn(&I) -> bool,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
+/// A [column][1] [adapter](Query) that retains **only** items within the specified [range][2].
+///
+/// [1]: manifest::Column
+/// [2]: RangeBounds
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct Range<'d, S, B, I>
+where
+    S: Source<'d>,
+    B: RangeBounds<I>,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// The [range](RangeBounds) of items to retain.
+    pub(crate) bounds: B,
+    /// Zero-sized **marker** carrying the item type and [`Dataset`][1] lifetime.
+    ///
+    /// [1]: crate::dataset::Dataset
+    pub(crate) phantom: PhantomData<&'d I>,
+}
+
+impl<'d, S, B, I> Deref for Range<'d, S, B, I>
+where
+    S: Source<'d>,
+    B: RangeBounds<I>,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
+/// A [column][1] [adapter](Query) that retains **only** items [matching](BitMatch) one target.
+///
+/// [1]: manifest::Column
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct BitMatch<'d, S, I>
+where
+    S: Source<'d>,
+    I: schema::BitMatch,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// The target against which each [deserialized](Deserialize) item is [assessed](BitMatch).
+    pub(crate) item: I,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S, I> Deref for BitMatch<'d, S, I>
+where
+    S: Source<'d>,
+    I: schema::BitMatch,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
