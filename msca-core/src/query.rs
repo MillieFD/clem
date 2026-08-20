@@ -683,3 +683,61 @@ where
     }
 }
 
+/// A [column][1] [adapter](Query) retaining only items from `S` that are also present in `K`.
+///
+/// [1]: manifest::Column
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct SemiJoin<'d, S, K>
+where
+    S: Source<'d>,
+    K: Source<'d>,
+{
+    /// The [data source](Source) that yields [deserialized](Deserialize) items restricted by `K`.
+    pub(crate) source: S,
+    /// The [data source](Source) that yields [deserialized](Deserialize) items to include from `S`.
+    pub(crate) keys: K,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S, K> Deref for SemiJoin<'d, S, K>
+where
+    S: Source<'d>,
+    K: Source<'d>,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
+/// A [column][1] [adapter](Query) retaining only items from `S` that are **not** present in `K`.
+///
+/// [1]: manifest::Column
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct AntiJoin<'d, S, K>
+where
+    S: Source<'d>,
+    K: Source<'d>,
+{
+    /// The [data source](Source) that yields [deserialized](Deserialize) items restricted by `K`.
+    pub(crate) source: S,
+    /// The [data source](Source) that yields [deserialized](Deserialize) items to include from `S`.
+    pub(crate) keys: K,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S, K> Deref for AntiJoin<'d, S, K>
+where
+    S: Source<'d>,
+    K: Source<'d>,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
