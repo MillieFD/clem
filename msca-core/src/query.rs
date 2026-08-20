@@ -1158,3 +1158,104 @@ where
         a.min(b)
     }
 }
+
+/* -------------------------------------------------------------------- Exclude Trait Definition */
+
+/// A [`Source`] that tests [buffers](Buffer) against a filter [closure][1] to determine inclusion.
+///
+/// ### Implementation
+///
+/// Buffer inclusion is described using a positional [mask](BitBox) where the `n`th [bit][2]
+/// corresponds to the `n`th buffer from the `n`th data [segment][3].
+///
+/// ```text
+/// buffers   [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
+/// mask        1    0    1    1    0      Mutable owned bitmask.
+///             ▼         ▼    ▼
+/// read        A         C    D           Buffers B and E are never read.
+/// ```
+///
+/// Each filter is applied subtractively to reduce the mask. Refer to the [`Src::try_exclude`]
+/// documentation for the underlying iteration method.
+///
+/// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
+/// [2]: bitvec::ptr::BitPtr
+/// [3]: crate::segment::Segment
+pub(crate) trait Exclude<'d>: Source<'d> + Sized {
+    /// Applies a fallible filter [closure][1] to each [`Buffer`] descriptor **without** exclusion
+    /// using [`Buffer::Detailed`] variant statistics.
+    ///
+    /// ### Guidance
+    ///
+    /// Use [`Exclude::with_min_max`] for filters that **can** assess detailed candidates.
+    ///
+    /// ### Errors
+    ///
+    /// - Returns [`io::Error`] if a [compact][2] item cannot be read from the [memory map](Mmap).
+    /// - Forwards [`io::Error`] from the fallible `test` function.
+    ///
+    /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
+    ///
+    /// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
+    /// [2]: Buffer::Compact
+    fn with_item<I, F, S>(&self, mask: &mut BitBox, f: F) -> Result<usize, io::Error>
+    where
+        Self::Item: Evaluate<I> + Decode<'d, Src = S>,
+        S: Deserialize<'d, Ok = S> + Decoder<'d, Self::Item>,
+        F: Fn(&I) -> bool,
+    {
+        self.try_exclude(mask, |buf, mmap| {
+            if let Buffer::Compact { .. } = buf {
+                let mut bytes = buf.sector().slice(mmap)?;
+                let keep = S::deserialize(&mut bytes)?.one()?.evaluate(&f);
+                Ok(keep)
+            } else {
+                Ok(true)
+            }
+        })
+    }
+
+    /// Applies a fallible filter [closure][1] to each [`Buffer`] descriptor **with** exclusion
+    /// using [`Buffer::Detailed`] variant statistics.
+    ///
+    /// ### Guidance
+    ///
+    /// Use [`Exclude::with_item`] for filters that **cannot** assess detailed candidates.
+    ///
+    /// ### Errors
+    ///
+    /// - Returns [`io::Error`] if a [compact][2] item cannot be read from the [memory map](Mmap).
+    /// - Forwards [`io::Error`] from the fallible filter function.
+    ///
+    /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
+    ///
+    /// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
+    /// [2]: Buffer::Compact
+    fn with_min_max<I, F, O, S>(&self, mask: &mut BitBox, f: F, op: O) -> Result<usize, io::Error>
+    where
+        Self::Item: Evaluate<I> + Decode<'d, Src = S>,
+        S: Deserialize<'d, Ok = S> + Decoder<'d, Self::Item>,
+        I: for<'de> Deserialize<'de, Ok = I> + 'd,
+        F: Fn(&I) -> bool,
+        O: Fn(&I, &I) -> bool,
+    {
+        self.try_exclude(mask, |buf, mmap| {
+            if let Buffer::Detailed { min, max, .. } = buf {
+                let min: I = min.slice(mmap)?.deserialize_into()?;
+                let max: I = max.slice(mmap)?.deserialize_into()?;
+                let keep = op(&min, &max);
+                Ok(keep)
+            } else if let Buffer::Compact { .. } = buf {
+                let mut bytes = buf.sector().slice(mmap)?;
+                let keep = S::deserialize(&mut bytes)?.one()?.evaluate(&f);
+                Ok(keep)
+            } else {
+                Ok(true) // retain Buffer::Basic
+            }
+        })
+    }
+}
+
+/* ---------------------------------------------------------------- Exclude Trait Implementation */
+
+impl<'d, S> Exclude<'d> for S where S: Source<'d> + Sized {}
