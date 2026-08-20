@@ -627,3 +627,59 @@ where
     }
 }
 
+/// A [column](manifest::Column) [adapter](Query) that skips the first `n` items.
+///
+/// This adapter is initialised from [`Query::skip`] and excludes any [buffers](Buffer) that are
+/// provably disjoint from the requested result set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Skip<'d, S>
+where
+    S: mask::Adapter<'d>,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// The number of items to [`skip`](Query::skip).
+    pub(crate) skip: usize,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S> Deref for Skip<'d, S>
+where
+    S: mask::Adapter<'d>,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
+/// A [column](manifest::Column) [adapter](Query) that reads at most `n` items.
+///
+/// This adapter is initialised from [`Query::take`] and excludes any [buffers](Buffer) that are
+/// provably disjoint from the requested result set.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub struct Take<'d, S>
+where
+    S: mask::Adapter<'d>,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// The number of items to [`take`](Query::take).
+    pub(crate) take: usize,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S> Deref for Take<'d, S>
+where
+    S: mask::Adapter<'d>,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
