@@ -483,3 +483,99 @@ where
     }
 }
 
+/// A [column](manifest::Column) [adapter](Query) that retains **only** items [matching](BitMatch)
+/// at least one candidate from a [collection](std::collections).
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct OneOf<'d, S, I>
+where
+    S: Source<'d>,
+    I: schema::BitMatch,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// Immutable [slice][1] over the **unsorted** candidate item [collection](std::collections).
+    ///
+    /// [1]: https://doc.rust-lang.org/book/ch04-03-slices.html
+    pub(crate) items: Box<[I]>,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S, I> Deref for OneOf<'d, S, I>
+where
+    S: Source<'d>,
+    I: schema::BitMatch,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
+/// A [column](manifest::Column) [adapter](Query) that retains **only** items [matching](BitMatch)
+/// at least one candidate from an ordered [collection](std::collections).
+#[derive(Clone, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct OneOfSorted<'d, S, I>
+where
+    S: Source<'d>,
+    I: Ord,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// Immutable [slice][1] over the **sorted** candidate item [collection](std::collections) in
+    /// **ascending order**.
+    ///
+    /// [1]: https://doc.rust-lang.org/book/ch04-03-slices.html
+    pub(crate) items: Box<[I]>,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S, I> Deref for OneOfSorted<'d, S, I>
+where
+    S: Source<'d>,
+    I: Ord,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
+/// A [column](manifest::Column) [adapter](Query) that retains **only** items [present](BitMatch)
+/// in the specified [hashed](std::hash::Hasher) candidate [set](HashSet).
+///
+/// [1]: manifest::Column
+#[derive(Clone, Debug)]
+// NOTE: this struct is used for both "mask" and "iter" adapter chains
+pub struct OneOfSet<'d, S, I>
+where
+    S: Source<'d>,
+    I: Eq + Hash,
+{
+    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    pub(crate) source: S,
+    /// The [hashed][1] candidate [set](HashSet) probed for each [deserialized](Deserialize) item.
+    ///
+    /// [1]: std::hash::Hasher
+    pub(crate) items: HashSet<I, Xxh3Builder>,
+    /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
+    pub(crate) phantom: PhantomData<&'d Mmap>,
+}
+
+impl<'d, S, I> Deref for OneOfSet<'d, S, I>
+where
+    S: Source<'d>,
+    I: Eq + Hash,
+{
+    type Target = Src<'d>;
+
+    fn deref(&self) -> &Src<'d> {
+        &self.source
+    }
+}
+
