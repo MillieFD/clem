@@ -741,3 +741,70 @@ where
     }
 }
 
+/* ---------------------------------------------------------------------------------- Join Nodes */
+
+/// A set intersection `∩` **node** returning items from `A` [`and`](Query::and) `B`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[non_exhaustive] // reject external struct literal construction
+pub struct Conjunct<A, B> {
+    /// A single [`Query`] or nested [combination](Combine).
+    pub a: A,
+    /// A single [`Query`] or nested [combination](Combine).
+    pub b: B,
+}
+
+impl<A, B> Deref for Conjunct<A, B>
+where
+    A: Deref,
+{
+    type Target = A::Target;
+
+    fn deref(&self) -> &A::Target {
+        // NOTE: a and b must originate from the same Schema; equality check at construction
+        &self.a
+    }
+}
+
+/// A set union `∪` **node** returning items from `A` [`or`](Query::or) `B`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[non_exhaustive] // reject external struct literal construction
+pub struct Disjunct<A, B> {
+    /// A single [`Query`] or nested [combination](Combine).
+    pub a: A,
+    /// A single [`Query`] or nested [combination](Combine).
+    pub b: B,
+}
+
+impl<A, B> Deref for Disjunct<A, B>
+where
+    A: Deref,
+{
+    type Target = A::Target;
+
+    fn deref(&self) -> &A::Target {
+        // NOTE: a and b must originate from the same Schema; equality check at construction
+        &self.a
+    }
+}
+
+/// A symmetric difference `△` **node** returning items from `A` [`xor`](Query::xor) `B`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[non_exhaustive] // reject external struct literal construction
+pub struct Adjunct<A, B> {
+    /// A single [`Query`] or nested [combination](Combine).
+    pub a: A,
+    /// A single [`Query`] or nested [combination](Combine).
+    pub b: B,
+}
+
+impl<A, B> Deref for Adjunct<A, B>
+where
+    A: Deref,
+{
+    type Target = A::Target;
+
+    fn deref(&self) -> &A::Target {
+        // NOTE: a and b must originate from the same Schema; equality check at construction
+        &self.a
+    }
+}
