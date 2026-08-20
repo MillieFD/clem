@@ -808,3 +808,156 @@ where
         &self.a
     }
 }
+
+/* --------------------------------------------------------------------- Source Trait Definition */
+
+/// A [data source](Src) or [adapter chain](Query) over one [`Column`](manifest::Column) that
+/// yields the specified [`Item`](Self::Item) type.
+///
+/// ### Lifetime
+///
+/// This trait carries a `'d` lifetime from the underlying [`Dataset`][1] to ensure no item outlives
+/// the on-disk bytes from which it was [deserialized](Deserialize). This design enables zero-copy
+/// reads. [`Clone`] the item to outlive `'d`.
+///
+/// ### Implementation
+///
+/// Each [`Filter`](crate::filter) wraps the data source in a buffer adapter that captures the
+/// necessary state to assess whole [buffers](Buffer) and individual items. Successive filters
+/// therefore construct a nested adapter chain. Terminal methods e.g. [`read`](Query::read) lazily
+/// resolve the whole chain into an item adapter chain of the same shape. The query is read in two
+/// phases:
+///
+/// ##### Phase 1: Mask Adapters Before IO
+///
+/// Every chain begins from a [data source](Src) that borrows the candidate [`Buffer`] set. The
+/// terminal method builds a [mask](BitBox) that initially includes every candidate buffer. The
+/// mask is passed along the chain, with each adapter assessing surviving buffers against a filter
+/// to exclude candidates that are provably disjoint from the requested results set. Every adapter
+/// is [monomorphized][2] against the concrete item type.
+///
+/// ##### Phase 2: Item Adapters During IO
+///
+/// The finished mask is consumed by the resolved source to yield an [`Iterator`] that lazily
+/// deserializes items from **only** the retained buffers. Enclosing adapters test the item and
+/// return an [`Outcome`], immediately short-circuiting once the item is [excluded][3].
+///
+/// ### Guidance
+///
+/// Each filter is applied in the order of declaration. Filters are lazy and short-circuiting:
+/// enclosing filters **never** reassess buffers that are already excluded by upstream filters.
+/// Users are advised to declare more restrictive filters upstream to reduce the result set quickly
+/// and minimise work for downstream filters.
+///
+/// This trait is implemented by single-column **mask** and **item** adapters in both phases of the
+/// query lifecycle. This trait is **not** implemented by [combined](Combine) adapters which join
+/// multiple columns.
+///
+/// [1]: crate::dataset::Dataset
+/// [2]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
+/// [3]: Outcome::exclude
+pub trait Source<'d>: Deref<Target = Src<'d>> {
+    /// The [deserialized](Deserialize) item type returned from this adapter chain.
+    type Item: Decode<'d> + 'd;
+}
+
+/* ----------------------------------------------------------------- Source Trait Implementation */
+
+impl<'d, I> Source<'d> for Column<'d, I>
+where
+    I: Decode<'d> + Clone + 'd,
+{
+    type Item = I;
+}
+
+impl<'d, S, F, I> Source<'d> for Filter<'d, S, F, I>
+where
+    S: Source<'d>,
+    F: Fn(&I) -> bool,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S, B, I> Source<'d> for Range<'d, S, B, I>
+where
+    S: Source<'d>,
+    B: RangeBounds<I>,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S, I> Source<'d> for BitMatch<'d, S, I>
+where
+    S: Source<'d>,
+    I: schema::BitMatch,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S, I> Source<'d> for OneOf<'d, S, I>
+where
+    S: Source<'d>,
+    I: schema::BitMatch,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S, I> Source<'d> for OneOfSorted<'d, S, I>
+where
+    S: Source<'d>,
+    I: Ord,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S, I> Source<'d> for OneOfSet<'d, S, I>
+where
+    S: Source<'d>,
+    I: Eq + Hash,
+{
+    type Item = S::Item;
+}
+impl<'d, S, I> Source<'d> for IsSome<'d, S, I>
+where
+    S: Source<'d>,
+    I: Decode<'d> + Clone + 'd,
+{
+    type Item = I;
+}
+
+impl<'d, S> Source<'d> for IsNone<'d, S>
+where
+    S: Source<'d>,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S> Source<'d> for Skip<'d, S>
+where
+    S: mask::Adapter<'d> + Source<'d>,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S> Source<'d> for Take<'d, S>
+where
+    S: mask::Adapter<'d> + Source<'d>,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S, K> Source<'d> for SemiJoin<'d, S, K>
+where
+    S: Source<'d>,
+    K: Source<'d>,
+{
+    type Item = S::Item;
+}
+
+impl<'d, S, K> Source<'d> for AntiJoin<'d, S, K>
+where
+    S: Source<'d>,
+    K: Source<'d>,
+{
+    type Item = S::Item;
+}
