@@ -19,8 +19,8 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //!
 //! Filters subtractively reduce the result set. Filters can act at two points in the query
 //! lifecycle: **buffer filters** are evaluated **before** file [`IO`](io); **item filters** are
-//! evaluated **after** [deserialization](Deserialize). Every item is deserialized exactly once and
-//! every infallible filter [`Fn`] is [monomorphized][1] by the compiler.
+//! evaluated **after** [deserialization][1]. Every item is deserialized exactly once, and every
+//! infallible filter [`Fn`] is [monomorphized][2] by the compiler.
 //!
 //! ```rust,ignore
 //! let overheating = dataset
@@ -33,7 +33,8 @@ modification, are permitted provided that the conditions of the LICENSE are met.
 //! Items are deserialized lazily each time [`next`](Iterator::next) is called on the [`Iterator`]
 //! returned by a terminal method.
 //!
-//! [1]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
+//! [1]: io::Deserialize
+//! [2]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
 
 #![doc = include_str!("../../doc/query-filters.md")]
 #![doc = include_str!("../../doc/query-columns.md")]
@@ -51,13 +52,12 @@ use funty::Unsigned;
 use memmap2::Mmap;
 use xxhash_rust::xxh3::Xxh3Builder;
 
-use crate::io::{self, Deserialize, Deserializer};
 use crate::item::{self, Composite, Outcome, Resolve};
 use crate::iter::{self, Origin};
 use crate::manifest::{self, Buffer};
-use crate::mask;
-use crate::read::{Decode, Decoder, Evaluate};
+use crate::read::Decode;
 use crate::schema::{self, Type, Unfolder, number};
+use crate::{io, mask};
 
 /* ------------------------------------------------------------------------------ Public Exports */
 
@@ -204,7 +204,7 @@ impl<'d> Schema<'d> {
     /// Refer to [`Schema::iter`] for a resolved alternative that automatically re-polls the
     /// iterator to yield only [included](Outcome::Include) items.
     ///
-    /// [1]: Deserialize::deserialize
+    /// [1]: io::Deserialize::deserialize
     pub fn read<I>(self) -> Result<impl Iterator<Item = Outcome<I>> + 'd, Error>
     where
         I: item::Read<'d> + 'd,
@@ -233,7 +233,7 @@ impl<'d> Schema<'d> {
     ///
     /// Refer to [`Schema::read`] for a non-resolved alternative that yields [`Outcome`].
     ///
-    /// [1]: Deserialize::deserialize
+    /// [1]: io::Deserialize::deserialize
     /// [2]: manifest::Column
     pub fn iter<I>(self) -> Result<impl Iterator<Item = Result<I, io::Error>> + 'd, Error>
     where
@@ -314,17 +314,19 @@ impl<'d> Src<'d> {
         mask.iter().by_vals().zip(self.buffers).filter(|b| b.0).map(|b| b.1).collect()
     }
 
-    /// An iterator method that applies a fallible [test](FnMut) to each [`Buffer`] descriptor:
+    /// An iterator method that applies a fallible [closure][1] to each [`Buffer`] descriptor:
     ///
-    /// - Skips any buffers that are already [excluded](Exclude) by the [mask](BitBox).
-    /// - Retains all buffers for which `test` returns `true`.
-    /// - Excludes any buffers for which `test` returns `false`.
+    /// - Skip any buffers that are already excluded by the [mask](BitBox).
+    /// - Retain all buffers for which `test` returns `true`.
+    /// - Exclude any buffers for which `test` returns `false`.
     ///
     /// Returns the number of included buffers. Refer to [`Src::mask`] for more details.
     ///
     /// ### Errors
     ///
     /// Forwards [`io::Error`] from the fallible `test` function.
+    ///
+    /// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
     pub(crate) fn try_exclude<F>(&self, mask: &mut BitBox, mut test: F) -> Result<usize, io::Error>
     where
         F: FnMut(&Buffer, &'d Mmap) -> Result<bool, io::Error>,
@@ -377,7 +379,7 @@ impl<'d, I> Deref for Column<'d, I> {
 
 /* ------------------------------------------------------------------------------ Column Filters */
 
-/// A [column][1] [adapter](Query) that [evaluates][2] each [deserialized](Deserialize) item
+/// A [column][1] [adapter](Query) that [evaluates][2] each [deserialized](io::Deserialize) item
 /// **without** [detailed](Buffer::Detailed) buffer exclusion using statistics.
 ///
 /// ### Implementation
@@ -389,16 +391,16 @@ impl<'d, I> Deref for Column<'d, I> {
 /// Use a named adapter e.g. [`Range`] for filters that **can** assess detailed candidates.
 ///
 /// [1]: manifest::Column
-/// [2]: Evaluate::evaluate
+/// [2]: crate::read::Evaluate::evaluate
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Filter<'d, S, F, I>
 where
     S: Source<'d>,
     F: Fn(&I) -> bool,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
-    /// The [`filter`][1] used to assess each item after [deserialization](Deserialize).
+    /// The [`filter`][1] used to assess each item after [deserialization](io::Deserialize).
     ///
     /// [1]: crate::filter::Filter::filter
     pub(crate) filter: F,
@@ -431,7 +433,7 @@ where
     S: Source<'d>,
     B: RangeBounds<I>,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
     /// The [range](RangeBounds) of items to retain.
     pub(crate) bounds: B,
@@ -463,9 +465,9 @@ where
     S: Source<'d>,
     I: schema::BitMatch,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
-    /// The target against which each [deserialized](Deserialize) item is [assessed](BitMatch).
+    /// The target against which each [deserialized](io::Deserialize) item is [assessed](BitMatch).
     pub(crate) item: I,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
     pub(crate) phantom: PhantomData<&'d Mmap>,
@@ -492,7 +494,7 @@ where
     S: Source<'d>,
     I: schema::BitMatch,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
     /// Immutable [slice][1] over the **unsorted** candidate item [collection](std::collections).
     ///
@@ -523,7 +525,7 @@ where
     S: Source<'d>,
     I: Ord,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
     /// Immutable [slice][1] over the **sorted** candidate item [collection](std::collections) in
     /// **ascending order**.
@@ -557,11 +559,12 @@ where
     S: Source<'d>,
     I: Eq + Hash,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
-    /// The [hashed][1] candidate [set](HashSet) probed for each [deserialized](Deserialize) item.
+    /// The [hashed][1] candidate [set](HashSet) probed for each [deserialized][2] item.
     ///
     /// [1]: std::hash::Hasher
+    /// [2]: io::Deserialize
     pub(crate) items: HashSet<I, Xxh3Builder>,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
     pub(crate) phantom: PhantomData<&'d Mmap>,
@@ -586,7 +589,7 @@ where
     S: Source<'d>,
     I: Decode<'d>,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
     /// Zero-sized **marker** carrying the flattened [`Some`] type and [`Schema`] lifetime.
     pub(crate) phantom: PhantomData<&'d I>,
@@ -610,7 +613,7 @@ pub struct IsNone<'d, S>
 where
     S: Source<'d>,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
     pub(crate) phantom: PhantomData<&'d Mmap>,
@@ -636,7 +639,7 @@ pub struct Skip<'d, S>
 where
     S: mask::Adapter<'d>,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
     /// The number of items to [`skip`](Query::skip).
     pub(crate) skip: usize,
@@ -664,7 +667,7 @@ pub struct Take<'d, S>
 where
     S: mask::Adapter<'d>,
 {
-    /// The wrapped [data source](Source) that yields [deserialized](Deserialize) items.
+    /// The wrapped [data source](Source) that yields [deserialized](io::Deserialize) items.
     pub(crate) source: S,
     /// The number of items to [`take`](Query::take).
     pub(crate) take: usize,
@@ -692,9 +695,13 @@ where
     S: Source<'d>,
     K: Source<'d>,
 {
-    /// The [data source](Source) that yields [deserialized](Deserialize) items restricted by `K`.
+    /// The [data source](Source) that yields [deserialized][1] items restricted by `K`.
+    ///
+    /// [1]: io::Deserialize
     pub(crate) source: S,
-    /// The [data source](Source) that yields [deserialized](Deserialize) items to include from `S`.
+    /// The [data source](Source) that yields [deserialized][1] items to include from `S`.
+    ///
+    /// [1]: io::Deserialize
     pub(crate) keys: K,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
     pub(crate) phantom: PhantomData<&'d Mmap>,
@@ -721,9 +728,13 @@ where
     S: Source<'d>,
     K: Source<'d>,
 {
-    /// The [data source](Source) that yields [deserialized](Deserialize) items restricted by `K`.
+    /// The [data source](Source) that yields [deserialized][1] items restricted by `K`.
+    ///
+    /// [1]: io::Deserialize
     pub(crate) source: S,
-    /// The [data source](Source) that yields [deserialized](Deserialize) items to include from `S`.
+    /// The [data source](Source) that yields [deserialized][1] items to include from `S`.
+    ///
+    /// [1]: io::Deserialize
     pub(crate) keys: K,
     /// Zero-sized **marker** carrying the [`Mmap`] lifetime read by the [`Source`].
     pub(crate) phantom: PhantomData<&'d Mmap>,
@@ -817,8 +828,8 @@ where
 /// ### Lifetime
 ///
 /// This trait carries a `'d` lifetime from the underlying [`Dataset`][1] to ensure no item outlives
-/// the on-disk bytes from which it was [deserialized](Deserialize). This design enables zero-copy
-/// reads. [`Clone`] the item to outlive `'d`.
+/// the on-disk bytes from which it was [deserialized][2]. This design enables zero-copy reads.
+/// [`Clone`] the item to outlive `'d`.
 ///
 /// ### Implementation
 ///
@@ -834,13 +845,13 @@ where
 /// terminal method builds a [mask](BitBox) that initially includes every candidate buffer. The
 /// mask is passed along the chain, with each adapter assessing surviving buffers against a filter
 /// to exclude candidates that are provably disjoint from the requested results set. Every adapter
-/// is [monomorphized][2] against the concrete item type.
+/// is [monomorphized][3] against the concrete item type.
 ///
 /// ##### Phase 2: Item Adapters During IO
 ///
 /// The finished mask is consumed by the resolved source to yield an [`Iterator`] that lazily
 /// deserializes items from **only** the retained buffers. Enclosing adapters test the item and
-/// return an [`Outcome`], immediately short-circuiting once the item is [excluded][3].
+/// return an [`Outcome`], immediately short-circuiting once the item is [excluded][4].
 ///
 /// ### Guidance
 ///
@@ -854,10 +865,11 @@ where
 /// multiple columns.
 ///
 /// [1]: crate::dataset::Dataset
-/// [2]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
-/// [3]: Outcome::exclude
+/// [2]: io::Deserialize::deserialize
+/// [3]: https://rustc-dev-guide.rust-lang.org/backend/monomorph.html
+/// [4]: Outcome::exclude
 pub trait Source<'d>: Deref<Target = Src<'d>> {
-    /// The [deserialized](Deserialize) item type returned from this adapter chain.
+    /// The [deserialized](io::Deserialize) item type returned from this adapter chain.
     type Item: Decode<'d> + 'd;
 }
 
@@ -1098,8 +1110,8 @@ where
     ///
     /// ### Implementation
     ///
-    /// [`Conjunct`] joins two upstream chains which may each [`Exclude`] different buffers. The
-    /// overall origin is the [`max`](Ord::max) displacement across both nodes.
+    /// [`Conjunct`] joins two upstream chains which may each exclude different buffers. The overall
+    /// origin is the [`max`](Ord::max) displacement across both nodes.
     ///
     /// Refer to the [trait documentation](Origin) for more information.
     fn origin(&self, mask: &BitBox) -> usize {
@@ -1112,8 +1124,8 @@ where
     ///
     /// ### Implementation
     ///
-    /// [`Conjunct`] joins two upstream chains which may each [`Exclude`] different buffers. The
-    /// overall quota is the [`min`](Ord::min) number of retained items across both nodes.
+    /// [`Conjunct`] joins two upstream chains which may each exclude different buffers. The overall
+    /// quota is the [`min`](Ord::min) number of retained items across both nodes.
     ///
     /// Refer to the [trait documentation](Origin) for more information.
     fn quota(&self, mask: &BitBox) -> usize {
@@ -1159,60 +1171,18 @@ where
     }
 }
 
-/* -------------------------------------------------------------------- Exclude Trait Definition */
 
-/// A [`Source`] that tests [buffers](Buffer) against a filter [closure][1] to determine inclusion.
 ///
 /// ### Implementation
 ///
 /// Buffer inclusion is described using a positional [mask](BitBox) where the `n`th [bit][2]
 /// corresponds to the `n`th buffer from the `n`th data [segment][3].
 ///
-/// ```text
-/// buffers   [ A ][ B ][ C ][ D ][ E ]    Immutable borrowed buffer set.
-/// mask        1    0    1    1    0      Mutable owned bitmask.
-///             ▼         ▼    ▼
-/// read        A         C    D           Buffers B and E are never read.
-/// ```
-///
-/// Each filter is applied subtractively to reduce the mask. Refer to the [`Src::try_exclude`]
-/// documentation for the underlying iteration method.
-///
-/// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
-/// [2]: bitvec::ptr::BitPtr
-/// [3]: crate::segment::Segment
-pub(crate) trait Exclude<'d>: Source<'d> + Sized {
-    /// Applies a fallible filter [closure][1] to each [`Buffer`] descriptor **without** exclusion
-    /// using [`Buffer::Detailed`] variant statistics.
-    ///
-    /// ### Guidance
-    ///
-    /// Use [`Exclude::with_min_max`] for filters that **can** assess detailed candidates.
     ///
     /// ### Errors
     ///
-    /// - Returns [`io::Error`] if a [compact][2] item cannot be read from the [memory map](Mmap).
-    /// - Forwards [`io::Error`] from the fallible `test` function.
-    ///
-    /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
-    ///
-    /// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
-    /// [2]: Buffer::Compact
-    fn with_item<I, F, S>(&self, mask: &mut BitBox, f: F) -> Result<usize, io::Error>
     where
-        Self::Item: Evaluate<I> + Decode<'d, Src = S>,
-        S: Deserialize<'d, Ok = S> + Decoder<'d, Self::Item>,
-        F: Fn(&I) -> bool,
     {
-        self.try_exclude(mask, |buf, mmap| {
-            if let Buffer::Compact { .. } = buf {
-                let mut bytes = buf.sector().slice(mmap)?;
-                let keep = S::deserialize(&mut bytes)?.one()?.evaluate(&f);
-                Ok(keep)
-            } else {
-                Ok(true)
-            }
-        })
     }
 
     /// Applies a fallible filter [closure][1] to each [`Buffer`] descriptor **with** exclusion
@@ -1220,42 +1190,13 @@ pub(crate) trait Exclude<'d>: Source<'d> + Sized {
     ///
     /// ### Guidance
     ///
-    /// Use [`Exclude::with_item`] for filters that **cannot** assess detailed candidates.
     ///
     /// ### Errors
     ///
-    /// - Returns [`io::Error`] if a [compact][2] item cannot be read from the [memory map](Mmap).
-    /// - Forwards [`io::Error`] from the fallible filter function.
     ///
-    /// Refer to the [`Src::try_exclude`] documentation for the underlying iteration method.
     ///
-    /// [1]: https://doc.rust-lang.org/book/ch13-01-closures.html
-    /// [2]: Buffer::Compact
-    fn with_min_max<I, F, O, S>(&self, mask: &mut BitBox, f: F, op: O) -> Result<usize, io::Error>
     where
-        Self::Item: Evaluate<I> + Decode<'d, Src = S>,
-        S: Deserialize<'d, Ok = S> + Decoder<'d, Self::Item>,
-        I: for<'de> Deserialize<'de, Ok = I> + 'd,
-        F: Fn(&I) -> bool,
-        O: Fn(&I, &I) -> bool,
     {
-        self.try_exclude(mask, |buf, mmap| {
-            if let Buffer::Detailed { min, max, .. } = buf {
-                let min: I = min.slice(mmap)?.deserialize_into()?;
-                let max: I = max.slice(mmap)?.deserialize_into()?;
-                let keep = op(&min, &max);
-                Ok(keep)
-            } else if let Buffer::Compact { .. } = buf {
-                let mut bytes = buf.sector().slice(mmap)?;
-                let keep = S::deserialize(&mut bytes)?.one()?.evaluate(&f);
-                Ok(keep)
-            } else {
-                Ok(true) // retain Buffer::Basic
-            }
-        })
     }
-}
 
-/* ---------------------------------------------------------------- Exclude Trait Implementation */
 
-impl<'d, S> Exclude<'d> for S where S: Source<'d> + Sized {}
