@@ -1140,16 +1140,30 @@ where
     A: Origin<'d>,
     B: Origin<'d>,
 {
+    /// Returns the index of the first retained item in the first retained [`Buffer`].
+    ///
+    /// ### Implementation
+    ///
+    /// [`Conjunct`] joins two upstream chains which may each exclude different buffers. The overall
+    /// origin is the [`max`](Ord::max) displacement across both nodes.
+    ///
+    /// Refer to the [trait documentation](Origin) for more information.
     fn origin(&self, mask: &BitBox) -> usize {
-        let a = self.a.quota(mask);
-        let b = self.b.quota(mask);
-        a.min(b)
+        let Disjunct { a, b } = self;
+        Conjunct { a, b }.origin(mask)
     }
 
+    /// Returns the number of retained items across every retained [`Buffer`].
+    ///
+    /// ### Implementation
+    ///
+    /// [`Conjunct`] joins two upstream chains which may each exclude different buffers. The overall
+    /// quota is the [`min`](Ord::min) number of retained items across both nodes.
+    ///
+    /// Refer to the [trait documentation](Origin) for more information.
     fn quota(&self, mask: &BitBox) -> usize {
-        let a = self.a.quota(mask);
-        let b = self.b.quota(mask);
-        a.min(b)
+        let Disjunct { a, b } = self;
+        Conjunct { a, b }.quota(mask)
     }
 }
 
@@ -1158,16 +1172,30 @@ where
     A: Origin<'d>,
     B: Origin<'d>,
 {
+    /// Returns the index of the first retained item in the first retained [`Buffer`].
+    ///
+    /// ### Implementation
+    ///
+    /// [`Conjunct`] joins two upstream chains which may each exclude different buffers. The overall
+    /// origin is the [`max`](Ord::max) displacement across both nodes.
+    ///
+    /// Refer to the [trait documentation](Origin) for more information.
     fn origin(&self, mask: &BitBox) -> usize {
-        let a = self.a.origin(mask);
-        let b = self.b.origin(mask);
-        a.min(b)
+        let Adjunct { a, b } = self;
+        Conjunct { a, b }.origin(mask)
     }
 
+    /// Returns the number of retained items across every retained [`Buffer`].
+    ///
+    /// ### Implementation
+    ///
+    /// [`Conjunct`] joins two upstream chains which may each exclude different buffers. The overall
+    /// quota is the [`min`](Ord::min) number of retained items across both nodes.
+    ///
+    /// Refer to the [trait documentation](Origin) for more information.
     fn quota(&self, mask: &BitBox) -> usize {
-        let a = self.a.quota(mask);
-        let b = self.b.quota(mask);
-        a.min(b)
+        let Adjunct { a, b } = self;
+        Conjunct { a, b }.quota(mask)
     }
 }
 
